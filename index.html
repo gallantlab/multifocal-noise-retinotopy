@@ -41,6 +41,10 @@
   .prog > div { height:100%; width:0%; background:var(--cursor); transition:width .2s; }
   #status { margin-top:8px; font-size:11px; color:var(--muted); min-height:14px; }
   #status.err { color:var(--accent); }
+  .hdrlinks { font-size:13px; font-weight:600; margin-left:10px; vertical-align:middle; }
+  .hdrlinks a { color:var(--cursor); text-decoration:none; }
+  .hdrlinks a:hover { text-decoration:underline; }
+  .hdrlinks .sep { color:var(--muted); }
 
   #stage { width:384px; height:384px; background:#808080; border-radius:6px; display:block; image-rendering:pixelated; }
   .controls { display:flex; align-items:center; gap:12px; margin-top:12px; }
@@ -65,7 +69,13 @@
 </style>
 </head>
 <body>
-  <h1>Retinotopy movie maker</h1>
+  <h1>Retinotopy movie maker
+    <span class="hdrlinks">
+      <a href="docs.html">Beginner's guide</a>
+      <span class="sep">·</span>
+      <a href="users-guide.html">User's guide</a>
+    </span>
+  </h1>
   <p class="sub" id="sub">loading&hellip;</p>
 
   <div class="layout">
@@ -136,10 +146,12 @@
  */
 const PRELOAD_CAP = 900;          // cap on frames preloaded into the player
 const FIELDS = [
+  {k:"geometry",     label:"stimulus",                     type:"sel", opts:["wedges","rings"]},
   {k:"width",        label:"movie width (pix)",            type:"num"},
   {k:"n_wedges",     label:"# wedges",                     type:"num"},
   {k:"wedge_mask",   label:"wedges shown",                 type:"wedges"},
   {k:"wedge_rotation",label:"wedge rotation (deg)",        type:"num", step:"0.5"},
+  {k:"ring_spacing", label:"ring spacing",                 type:"sel", opts:["log","equal_width","equal_area"]},
   {k:"wedge_sec",    label:"wedge duration (sec)",         type:"num", step:"0.1"},
   {k:"fps",          label:"frame rate (hz)",              type:"num"},
   {k:"color",        label:"color / BW",                   type:"sel", opts:["color","bw"]},
@@ -160,14 +172,17 @@ const FIELDS = [
   {k:"fixation",     label:"fixation spot",                type:"sel", opts:["off","on"]},
   {k:"mode",         label:"demo / full",                  type:"sel", opts:["demo","full"]},
 ];
-const DEFAULTS = {width:512,n_wedges:8,wedge_rotation:22.5,wedge_sec:4.1,fps:30,color:"color",
+const DEFAULTS = {geometry:"wedges",width:512,n_wedges:8,wedge_rotation:22.5,ring_spacing:"log",
+  wedge_sec:4.1,fps:30,color:"color",
   tf_shape:"1/f",tf_lo:0.5,tf_hi:15,sf_shape:"1/f",sf_lo:2,sf_hi:128,
-  n_orientations:2,background:"gray",fade_frames:5,pad_sec:2,fixation:"off",mode:"demo"};
+  n_orientations:2,background:"gray",fade_frames:5,pad_sec:2,fixation:"on",mode:"demo"};
 
 // ---- build the form ----
 const form = document.getElementById('form');
 const inputs = {};
+const rows = {}, labelEls = {};             // per-field row + label-span refs (for relabeling)
 let wedgeChips = null, wedgeState = [];     // per-wedge "shown" toggles
+let wedgeLabelEl = null;                    // the "wedges shown" label span
 for (const f of FIELDS) {
   if (f.type === "section") {
     const d = document.createElement('div'); d.className = 'fld section'; d.textContent = f.label;
@@ -178,6 +193,7 @@ for (const f of FIELDS) {
     wrap.innerHTML = `<div class="wlabel"><span>${f.label}</span><span class="wpresets">` +
       `<a data-p="all">all</a><a data-p="none">none</a><a data-p="alt">alt</a></span></div><div class="wchips"></div>`;
     form.appendChild(wrap);
+    rows[f.k] = wrap; wedgeLabelEl = wrap.querySelector('.wlabel span');
     wedgeChips = wrap.querySelector('.wchips');
     wrap.querySelectorAll('.wpresets a').forEach(a => a.onclick = () => applyWedgePreset(a.dataset.p));
     continue;
@@ -191,10 +207,34 @@ for (const f of FIELDS) {
   } else {
     el = document.createElement('input'); el.type = 'number'; if (f.step) el.step = f.step;
   }
-  row.appendChild(el); form.appendChild(row); inputs[f.k] = el;
+  row.appendChild(el); form.appendChild(row); inputs[f.k] = el; rows[f.k] = row; labelEls[f.k] = name;
 }
 // rebuilding the wedge toggles to all-on when # wedges changes
 inputs.n_wedges.addEventListener('change', () => buildWedgeToggles(wedgeCount(), null));
+// SF is in cyc/width, so changing the movie width would change the apparent texture
+// scale. Rescale the SF band by the width ratio to keep the same cycle proportions
+// (constant cycles-per-pixel) — this also keeps the band within the Nyquist (width/2).
+let lastWidth = parseFloat(inputs.width.value) || DEFAULTS.width;
+const trimSF = v => Math.round(v * 1000) / 1000;
+inputs.width.addEventListener('change', () => {
+  const w = parseFloat(inputs.width.value);
+  if (w > 0 && lastWidth > 0 && w !== lastWidth) {
+    const r = w / lastWidth;
+    inputs.sf_lo.value = trimSF(parseFloat(inputs.sf_lo.value) * r);
+    inputs.sf_hi.value = trimSF(parseFloat(inputs.sf_hi.value) * r);
+  }
+  if (w > 0) lastWidth = w;
+});
+// wedges vs rings: relabel the region controls and show only the relevant geometry options
+inputs.geometry.addEventListener('change', applyGeometryUI);
+function applyGeometryUI() {
+  const rings = inputs.geometry.value === 'rings';
+  labelEls.n_wedges.textContent  = rings ? '# rings' : '# wedges';
+  wedgeLabelEl.textContent       = rings ? 'rings shown' : 'wedges shown';
+  labelEls.wedge_sec.textContent = rings ? 'ring duration (sec)' : 'wedge duration (sec)';
+  rows.wedge_rotation.style.display = rings ? 'none' : '';   // wedges only
+  rows.ring_spacing.style.display   = rings ? '' : 'none';   // rings only
+}
 
 function wedgeCount() { return Math.max(1, parseInt(inputs.n_wedges.value) || 0); }
 function buildWedgeToggles(N, mask) {
@@ -217,6 +257,8 @@ function applyWedgePreset(kind) {
 function setForm(vals) {
   for (const k in inputs) if (k in vals) inputs[k].value = vals[k];
   buildWedgeToggles(wedgeCount(), vals.wedge_mask);     // toggles follow # wedges / saved mask
+  applyGeometryUI();                                    // relabel for wedges vs rings
+  lastWidth = parseFloat(inputs.width.value) || lastWidth;   // SF-rescale baseline
 }
 function getForm() {
   const p = {};
@@ -251,21 +293,30 @@ function buildViewer(meta) {
   const truncated = meta.total_frames > G.preview;
   $('previewPill').textContent = `${meta.generated_states}/${L} states` +
       (truncated ? ` · preview ${G.preview}f` : '') + (meta.pad_frames ? ` · ${meta.pad_frames/FPS}s pad` : '');
+  const rings = meta.geometry === 'rings';
+  const regTag = rings ? 'R' : 'W';
   const angTxt = meta.orient_angles.map(a => Math.round(a)+'°').join('/');
-  const rotTxt = meta.wedge_rotation ? ` +${meta.wedge_rotation}°` : '';
-  $('sub').innerHTML = `${W}×${W} · ${FPS} Hz · ${N} wedges${rotTxt} · ${meta.wedge_sec}s/state · ` +
+  const geoTxt = rings ? `${N} rings (${meta.ring_spacing})`
+                       : `${N} wedges${meta.wedge_rotation ? ` +${meta.wedge_rotation}°` : ''}`;
+  $('sub').innerHTML = `${W}×${W} · ${FPS} Hz · ${geoTxt} · ${meta.wedge_sec}s/state · ` +
      `${meta.color} · ${meta.n_orientations} orient (${angTxt}) · ${meta.background} bg · ` +
      `SF ${meta.sf_shape} ${meta.sf_band[0]}–${meta.sf_band[1]} cyc/w · TF ${meta.tf_shape} ${meta.tf_band[0]}–${meta.tf_band[1]} Hz`;
 
   // design-matrix column headers
   const dmCols = $('dmCols'); dmCols.innerHTML = '';
-  for (let k=0;k<N;k++){ const s=document.createElement('span'); s.textContent='W'+(k+1); dmCols.appendChild(s); }
+  for (let k=0;k<N;k++){ const s=document.createElement('span'); s.textContent=regTag+(k+1); dmCols.appendChild(s); }
   G.colEls = [...dmCols.children];
 
   // matrix images (cache-bust)
   const v = '?v=' + G.ver;
   $('dmImg').src = 'design_matrix.png' + v;
   $('omImg').src = 'orientation_matrix.png' + v;
+  // spectra may be absent (no on-regions in the movie) — hide the broken <img> if so
+  for (const sid of ['specOrient','specSpatial','specTemporal']) {
+    const im = $(sid);
+    im.onload = () => { im.style.display = ''; };
+    im.onerror = () => { im.style.display = 'none'; };
+  }
   $('specOrient').src = 'orientation_spectrum.png' + v;
   $('specSpatial').src = 'spatial_spectrum.png' + v;
   $('specTemporal').src = 'temporal_spectrum.png' + v;
@@ -290,7 +341,7 @@ function buildViewer(meta) {
     sp.innerHTML = `<span class="sw" style="background:rgb(${r},${g},${b})"></span>${Math.round(meta.orient_angles[i])}°`;
     leg.appendChild(sp);
   }
-  const dim=document.createElement('span'); dim.textContent='faded = wedge off'; leg.appendChild(dim);
+  const dim=document.createElement('span'); dim.textContent='faded = region off'; leg.appendChild(dim);
 
   // preload frames
   G.frames = new Array(G.preview);
@@ -344,7 +395,7 @@ function loop(now){
 $('playBtn').onclick = () => { G.playing=!G.playing; $('playBtn').textContent=G.playing?'Pause':'Play'; G.startT=null; };
 
 // ---- generation ----
-const genBtn=$('genBtn'), cancelBtn=$('cancelBtn'), prog=$('prog'), progBar=prog.firstElementChild, status=$('status');
+const genBtn=$('genBtn'), cancelBtn=$('cancelBtn'), prog=$('prog'), progBar=prog.firstElementChild, statusEl=$('status');
 const SERVED = location.protocol === 'http:' || location.protocol === 'https:';
 let polling=null;
 genBtn.onclick = async () => {
@@ -352,18 +403,18 @@ genBtn.onclick = async () => {
   const params=getForm();
   genBtn.disabled=true; cancelBtn.style.display='block'; cancelBtn.disabled=false;
   prog.style.display='block'; progBar.style.width='0%';
-  status.className=''; status.textContent='starting…';
+  statusEl.className=''; statusEl.textContent='starting…';
   const warn = params.mode==='full' ? ' (full movie can take many minutes)' : '';
   try {
     const r=await fetch('/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(params)});
     const j=await r.json();
     if(!r.ok||j.error){ throw new Error(j.error||('HTTP '+r.status)); }
-    status.textContent='generating…'+warn;
+    statusEl.textContent='generating…'+warn;
     poll();
   } catch(e){ fail(e.message); }
 };
 cancelBtn.onclick = async () => {
-  cancelBtn.disabled=true; status.className=''; status.textContent='cancelling…';
+  cancelBtn.disabled=true; statusEl.className=''; statusEl.textContent='cancelling…';
   try { await fetch('/cancel',{method:'POST'}); } catch(e){ /* poll will settle state */ }
 };
 function endUI(){ genBtn.disabled=false; cancelBtn.style.display='none'; setTimeout(()=>{prog.style.display='none';},800); }
@@ -372,9 +423,9 @@ function poll(){
   polling=setInterval(async ()=>{
     let j; try{ j=await (await fetch('/status?t='+Date.now())).json(); }catch(e){ return; }
     if(j.total) progBar.style.width=Math.min(100,100*j.done/j.total)+'%';
-    if(j.state==='running') status.textContent=`generating… ${j.done}/${j.total} frames`;
-    if(j.state==='done'){ clearInterval(polling); status.textContent='done.'; finishGen(); }
-    if(j.state==='cancelled'){ clearInterval(polling); status.textContent='cancelled.'; endUI(); }
+    if(j.state==='running') statusEl.textContent=`generating… ${j.done}/${j.total} frames`;
+    if(j.state==='done'){ clearInterval(polling); statusEl.textContent='done.'; finishGen(); }
+    if(j.state==='cancelled'){ clearInterval(polling); statusEl.textContent='cancelled.'; endUI(); }
     if(j.state==='error'){ clearInterval(polling); fail(j.error); }
   },700);
 }
@@ -385,7 +436,7 @@ async function finishGen(){
   }catch(e){ fail('reload failed: '+e.message); }
   endUI();
 }
-function fail(msg){ status.className='err'; status.textContent='error: '+msg; endUI(); }
+function fail(msg){ statusEl.className='err'; statusEl.textContent='error: '+msg; endUI(); }
 
 // ---- initial load ----
 (async function init(){

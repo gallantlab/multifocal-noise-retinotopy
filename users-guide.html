@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Retinotopy movie maker — User's guide</title>
+<link rel="stylesheet" href="guide.css">
+</head>
+<body>
+
+<div class="topbar">
+  <span><strong>Retinotopy movie maker</strong></span>
+  <span class="guidetabs">
+    <a href="docs.html">Beginner's guide</a>
+    <a class="active" href="users-guide.html">User's guide</a>
+    <a class="home" href="index.html">App &rarr;</a>
+  </span>
+</div>
+
+<div class="wrap">
+  <nav>
+    <p class="navtitle">Contents</p>
+    <a href="#overview">Overview</a>
+    <a href="#run">Running it</a>
+    <a href="#interface">The interface</a>
+    <a href="#params">Parameter reference</a>
+    <a href="#design">Design &amp; m-sequences</a>
+    <a href="#noise">Noise synthesis</a>
+    <a href="#geometry">Geometry</a>
+    <a class="sub" href="#g-wedges">Wedges</a>
+    <a class="sub" href="#g-rings">Rings</a>
+    <a href="#caveats">Caveats &amp; limits</a>
+    <a class="sub" href="#c-temporal">Temporal band</a>
+    <a class="sub" href="#c-spatial">Spatial band</a>
+    <a class="sub" href="#c-orient">Orientation</a>
+    <a class="sub" href="#c-bg">Background angles</a>
+    <a href="#outputs">Outputs &amp; metadata</a>
+  </nav>
+
+  <main>
+    <h1>User's guide</h1>
+    <p class="lede">Operating manual and technical reference: the interface, every parameter
+      with its exact units, the design and synthesis methods, and the limits that matter
+      when designing a run. New to retinotopy? Start with the
+      <a href="docs.html">Beginner's guide</a>.</p>
+
+    <h2 id="overview">Overview</h2>
+    <p>The stimulus is a disc of diameter <code>width</code> split into <code>N</code>
+      <strong>regions</strong> — angular <strong>wedges</strong> (polar-angle mapping) or
+      concentric <strong>rings</strong> (eccentricity mapping). Two independent
+      maximum-length sequences (m-sequences) drive a multifocal design: one gates each
+      region on/off across 63 states, the other sets each on-region's noise orientation.
+      Each on-region carries independent multicolour bandpass <strong>1/f</strong>
+      spatiotemporal noise of a single orientation. States fade to the background; the movie
+      is optionally padded with full-screen isotropic noise. Output is a PNG frame sequence
+      plus a complete JSON design record and verification plots.</p>
+    <div class="box key">
+      <p class="lbl">terminology</p>
+      <p>"Region" = a wedge or a ring. The parameter keys keep their historical
+        <code>n_wedges</code> / <code>wedge_*</code> names for both geometries; the UI relabels
+        them ("# rings", "ring duration", …) when you select rings.</p>
+    </div>
+
+    <h2 id="run">Running it</h2>
+    <pre><code>python3 server.py            # stdlib HTTP server on :8000
+# open http://localhost:8000</code></pre>
+    <p>Requirements: Python 3 with <code>numpy</code>, <code>Pillow</code>,
+      <code>matplotlib</code>. The page <strong>must be served</strong> (generation calls the
+      backend) — opening <code>index.html</code> as a <code>file://</code> shows a notice and
+      will not generate. A long run can be aborted with <strong>Cancel</strong> (stops within
+      roughly one state's compute).</p>
+
+    <h2 id="interface">The interface</h2>
+    <p>Left panel: the parameter form, <strong>Generate</strong>, and (while running)
+      <strong>Cancel</strong> with a progress bar. The rest is the viewer, rebuilt after each
+      run from <code>movie_meta.json</code>:</p>
+    <ul>
+      <li><strong>Movie</strong> — canvas player (Pause/Play) looping the rendered frames at
+        the true frame rate. Readout shows frame, time, the current state (or padding), and
+        the on-regions with their orientations. Up to 900 frames are preloaded for playback.</li>
+      <li><strong>On/off m-sequence</strong> — the design matrix (states down × regions across,
+        labelled <code>W1…</code> or <code>R1…</code>; red = on) with a time axis and a cursor
+        tracking playback.</li>
+      <li><strong>Orientation m-sequence</strong> — orientation index per state × region, one
+        hue per orientation (off-regions dimmed).</li>
+      <li><strong>Noise spectra</strong> — measured vs. ideal temporal, spatial (radial + 2-D),
+        and orientation spectra, sampled from the first non-empty state, for verification.</li>
+    </ul>
+
+    <h2 id="params">Parameter reference</h2>
+    <p>Defaults in the table. Geometry-specific controls are tagged
+      <span class="tag w">wedges</span> / <span class="tag r">rings</span>.</p>
+    <table>
+      <thead><tr><th>Parameter</th><th>Units</th><th>Default</th><th>Notes</th></tr></thead>
+      <tbody>
+        <tr><td>stimulus</td><td>wedges&nbsp;|&nbsp;rings</td><td>wedges</td><td>Region geometry. Everything else is identical between the two.</td></tr>
+        <tr><td>movie width</td><td>pixels</td><td>512</td><td>Frame is <code>width×width</code>. Sets resolution and spatial Nyquist (<code>width/2</code> cyc/width). Changing it auto-rescales the SF band (below).</td></tr>
+        <tr><td># wedges / # rings</td><td>—</td><td>8</td><td>Region count <code>N</code>. Each is one on/off regressor (shift <code>round(k·63/N)</code>). Capped at <strong>63</strong>. Ring 1 = innermost.</td></tr>
+        <tr><td>wedges / rings shown</td><td>—</td><td>all</td><td>Per-region include/exclude toggles (all / none / alt). Hidden regions never turn on; geometry and m-sequence unchanged.</td></tr>
+        <tr><td>wedge rotation <span class="tag w">wedges</span></td><td>deg</td><td>22.5</td><td>Rotates all sector boundaries CCW; purely geometric. <code>360/(2N)</code> offsets boundaries by half a wedge, moving the cuts off the cardinal axes (halfway between the un-rotated divisions).</td></tr>
+        <tr><td>ring spacing <span class="tag r">rings</span></td><td>log&nbsp;|&nbsp;equal_width&nbsp;|&nbsp;equal_area</td><td>log</td><td>Eccentricity sampling (formulas under <a href="#g-rings">Rings</a>).</td></tr>
+        <tr><td>wedge / ring duration</td><td>sec</td><td>4.1</td><td>State length → <code>frames_per_state = round(fps·dur)</code>; sets the lowest representable TF (<code>1/dur</code>).</td></tr>
+        <tr><td>frame rate</td><td>Hz</td><td>30</td><td>Render/display rate; caps TF at the Nyquist <code>fps/2</code>.</td></tr>
+        <tr><td>color / BW</td><td>color&nbsp;|&nbsp;bw</td><td>color</td><td><code>color</code> = 3 independent RGB channels (random colour per Fourier component); <code>bw</code> = grayscale.</td></tr>
+        <tr><td>TF shape / lo / hi</td><td>1/f&nbsp;|&nbsp;flat ; Hz</td><td>1/f, 0.5–15</td><td>Temporal amplitude spectrum and passband. Keep <code>hi ≤ fps/2</code>, <code>lo ≥ 1/dur</code>.</td></tr>
+        <tr><td>SF shape / lo / hi</td><td>1/f&nbsp;|&nbsp;flat ; cyc/width</td><td>1/f, 2–128</td><td>Spatial amplitude spectrum and passband in cycles across the width. Auto-rescaled with movie width.</td></tr>
+        <tr><td># orientations</td><td>—</td><td>2</td><td>Number <code>K</code> of equally spaced image orientations <code>i·180/K</code>°. 0°/90° exact; others use a thin Fourier wedge.</td></tr>
+        <tr><td>background</td><td>gray&nbsp;|&nbsp;random&nbsp;|&nbsp;oriented</td><td>gray</td><td><code>random</code> = isotropic noise; <code>oriented</code> = single-orientation noise, per state most orthogonal to the on-regions.</td></tr>
+        <tr><td>fade between states</td><td>frames</td><td>5</td><td>Per-state contrast ramp in/out (to background). Clamped to <code>frames_per_state/2</code>.</td></tr>
+        <tr><td>padding before/after</td><td>sec</td><td>2</td><td>Full-screen isotropic 1/f noise prepended and appended.</td></tr>
+        <tr><td>fixation spot</td><td>off&nbsp;|&nbsp;on</td><td>on</td><td>Central 2×2-px square, random colour every 0.5 s; colour sequence recorded.</td></tr>
+        <tr><td>demo / full</td><td>—</td><td>demo</td><td><code>demo</code> = first 5 states; <code>full</code> = all 63.</td></tr>
+      </tbody>
+    </table>
+    <p class="muted">"1/f" = amplitude ∝ 1/f (power ∝ 1/f²).</p>
+
+    <h2 id="design">Design &amp; m-sequences</h2>
+    <p>Two binary maximum-length sequences of order 6 (period <strong>L = 2⁶−1 = 63</strong>),
+      generated by a Fibonacci LFSR from distinct primitive polynomials:</p>
+    <ul>
+      <li><strong>On/off:</strong> <code>x⁶+x+1</code> (taps <code>[6,1]</code>).</li>
+      <li><strong>Orientation:</strong> <code>x⁶+x⁴+x³+x+1</code> (taps <code>[6,4,3,1]</code>).</li>
+    </ul>
+    <p>Region <code>k</code> reads each sequence at circular shift <code>round(k·L/N)</code>,
+      making the region regressors near-orthogonal (the basis of the multifocal method). The
+      two sequences are themselves nearly uncorrelated (per-region correlation ≈ −0.02), so
+      <strong>location and orientation are separately estimable</strong> in an encoding model.
+      The orientation index is decoded from <code>ceil(log₂K)</code> consecutive orientation
+      bits, taken <code>mod K</code> — exact for <code>K=2</code> (see <a href="#c-orient">Orientation</a>).</p>
+
+    <h2 id="noise">Noise synthesis</h2>
+    <p>Each noise block is white Gaussian noise shaped in the 3-D Fourier domain by a separable
+      amplitude filter <code>H = spatial(x,y) × temporal(t)</code>:</p>
+    <pre><code>noise = irfftn( rfftn(white) * H )      # over (x, y, t)
+noise /= noise.std()                    # unit variance
+pixel = clip(128 + 38 * noise, 0, 255)  # BG=128, GAIN=38 gray-levels/std</code></pre>
+    <ul>
+      <li><strong>Spatial filter:</strong> radial bandpass <code>[sf_lo, sf_hi]</code> cyc/width
+        with 1/f or flat amplitude, optionally masked to one orientation.</li>
+      <li><strong>Temporal filter:</strong> bandpass <code>[tf_lo, tf_hi]</code> Hz, DC zeroed.</li>
+      <li><strong>Colour:</strong> 3 independent fields through the same <code>H</code> (each
+        Fourier component a random RGB); BW replicates one field.</li>
+      <li><strong>Independence:</strong> every region uses its own seed
+        (<code>BASE_SEED + s·N + k</code>), so adjacent regions do not blend — a deliberate
+        seam at shared boundaries keeps them separable.</li>
+    </ul>
+
+    <h2 id="geometry">Geometry</h2>
+    <p>Both geometries partition the disc <code>r ≤ width/2</code> with pixel centres at
+      <code>i+0.5</code>; the masks tile the disc with no gaps or overlaps.</p>
+
+    <h3 id="g-wedges">Wedges <span class="tag w">wedges</span></h3>
+    <p>Angles measured from 3 o'clock CCW; wedge <code>k</code> spans
+      <code>[k, k+1)·360/N°</code>, with all boundaries offset by <code>wedge rotation</code>.</p>
+
+    <h3 id="g-rings">Rings <span class="tag r">rings</span></h3>
+    <p>Ring <code>k</code> is the annulus <code>[b_k, b_{k+1})</code> (outer ring takes the disc
+      edge), with boundary radii <code>b_k</code> from <code>0</code> (fovea) to
+      <code>R = width/2</code>:</p>
+    <table>
+      <thead><tr><th>Spacing</th><th>Boundary radii</th><th>Character</th></tr></thead>
+      <tbody>
+        <tr><td><code>equal_width</code></td><td><code>b_k = R·k/N</code></td><td>Equal radial thickness.</td></tr>
+        <tr><td><code>equal_area</code></td><td><code>b_k = R·√(k/N)</code></td><td>Equal screen area per ring (thinner outward).</td></tr>
+        <tr><td><code>log</code></td><td><code>b_k = r₀·((R+r₀)/r₀)^(k/N) − r₀</code>, &nbsp;<code>r₀ = 0.05R</code></td><td>Equal spacing in <code>log(r+r₀)</code>: thin at the fovea, thick in the periphery (≈ equal cortical area). Spans <code>[0,R]</code> exactly.</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="caveats">Caveats &amp; limits</h2>
+
+    <h3 id="c-temporal">Temporal band</h3>
+    <p>The highest representable temporal frequency is the Nyquist <strong><code>fps/2</code></strong>
+      (15 Hz at 30 fps); the UI does not clamp this, so keep <code>tf_hi ≤ fps/2</code>. The
+      lowest is set by the state window, ≈ <code>1/wedge_sec</code> (≈ 0.24 Hz at 4.1 s).</p>
+
+    <h3 id="c-spatial">Spatial band &amp; auto-scaling</h3>
+    <p><code>cyc/width</code> = cycles across the movie width = the integer FFT index for a
+      <code>width</code>-px field; spatial Nyquist is <strong><code>width/2</code></strong>.
+      Because the unit is tied to the pixel width, the UI <strong>auto-rescales the SF band by
+      the width ratio</strong> when you change <code>width</code> (constant cycles-per-pixel),
+      which keeps the texture scale fixed and the band in range — e.g. 512→256 turns 2/128 into
+      1/64. Edit SF after setting width to override.</p>
+
+    <h3 id="c-orient">Orientation</h3>
+    <p>0° and 90° fall on the FFT grid and are selected as the <strong>exact infinitely-narrow
+      Fourier line</strong>; off-axis angles can't, so they use a thin angular wedge of
+      half-width <code>min(4°, 90/2K°)</code> — i.e. 4° until <code>K ≥ 12</code>. The K-ary
+      orientation decode (<code>mod K</code>
+      of <code>ceil(log₂K)</code> bits) is a true balanced m-sequence only for <code>K=2</code>;
+      powers of two stay close to balanced, other <code>K</code> are more biased. Measured
+      per-orientation counts over 63 states: K=2 → 248/256; K=4 → 120/128/128/128.</p>
+
+    <h3 id="c-bg">Background orientation count</h3>
+    <p>With the <code>oriented</code> background, the angle each state is the midpoint of the
+      largest empty arc among the on-regions' orientations (maximally orthogonal). Outputs lie
+      on a <code>90/K</code>° grid, so at most <strong>2K</strong> values are possible, but
+      fewer occur. Distinct background angles over 63 states:</p>
+    <table>
+      <thead><tr><th># regions</th><th>K</th><th># bg orientations</th><th>values (deg)</th></tr></thead>
+      <tbody>
+        <tr><td>4</td><td>2</td><td>3</td><td>0, 45, 90</td></tr>
+        <tr><td><strong>8</strong></td><td><strong>2</strong></td><td><strong>3</strong></td><td><strong>0, 45, 90</strong></td></tr>
+        <tr><td>16</td><td>2</td><td>1</td><td>45</td></tr>
+        <tr><td>8</td><td>3</td><td>5</td><td>0, 30, 60, 90, 120</td></tr>
+        <tr><td>8</td><td>4</td><td>8</td><td>0, 22.5, 45, 67.5, 90, 112.5, 135, 157.5</td></tr>
+      </tbody>
+    </table>
+    <p><strong>More regions → fewer distinct background angles:</strong> with many regions on
+      it's likely all <code>K</code> orientations are present, and the full set always maps to
+      the single value <code>90/K</code>°. Use fewer regions or larger <code>K</code> for a
+      background that varies. Defaults (8 regions, K=2) → 3 angles. All 63 per-state angles are
+      recorded in <code>bg_orient</code>.</p>
+
+    <h3>Other notes</h3>
+    <ul>
+      <li><strong>Region cap:</strong> <code>N</code> is clamped to <code>[1, 63]</code> — beyond
+        63 regions cannot get distinct shifts (collinear regressors).</li>
+      <li><strong>Fades are to background, not crossfades:</strong> states do not overlap; the
+        screen returns to the background between them.</li>
+      <li><strong>Reproducibility:</strong> all RNG seeds derive from a fixed
+        <code>BASE_SEED</code>, so identical parameters reproduce an identical movie.</li>
+      <li><strong>Padding &amp; <code>random</code> background</strong> are isotropic (no
+        orientation filtering).</li>
+    </ul>
+
+    <h2 id="outputs">Outputs &amp; metadata</h2>
+    <p>Each run clears and repopulates these next to the program:</p>
+    <table>
+      <thead><tr><th>File</th><th>Contents</th></tr></thead>
+      <tbody>
+        <tr><td><code>frames/frame_NNNNN.png</code></td><td>The movie, one RGB PNG per frame. Layout: <code>[pad] [state 0 … state n] [pad]</code>.</td></tr>
+        <tr><td><code>movie_meta.json</code></td><td>The complete, reconstructable design + parameters (see below).</td></tr>
+        <tr><td><code>design_matrix.png</code><br><code>orientation_matrix.png</code></td><td>On/off and orientation schedules (states × regions).</td></tr>
+        <tr><td><code>temporal_/spatial_/orientation_spectrum.png</code></td><td>Measured-vs-ideal spectra, from the first non-empty state.</td></tr>
+      </tbody>
+    </table>
+    <p><code>movie_meta.json</code> records everything needed to reconstruct the stimulus:
+      <code>geometry</code>, <code>ring_spacing</code>, <code>design</code> (states × regions
+      on/off), <code>orient_design</code> (orientation index per state × region),
+      <code>orient_angles</code>, <code>wedge_mask</code>, <code>wedge_rotation</code>,
+      <code>bg_orient</code> (background angle for every state),
+      <code>fixation_colors</code> + <code>fixation_block_frames</code>, all timing and band
+      settings, and the echoed <code>params</code>. Design arrays cover all 63 states even in
+      demo mode.</p>
+
+    <footer>
+      Retinotopy movie maker. Conceptual introduction: <a href="docs.html">Beginner's guide</a>.
+      Source-level detail and formulas: <code>README.md</code> and the docstrings in
+      <code>generator.py</code>.
+    </footer>
+  </main>
+</div>
+</body>
+</html>

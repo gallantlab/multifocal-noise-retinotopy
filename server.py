@@ -26,6 +26,7 @@ import http.server
 import json
 import socketserver
 import threading
+import traceback
 from functools import partial
 
 import generator
@@ -53,7 +54,6 @@ def run_job(params: dict) -> None:
         with LOCK:
             JOB["state"] = "cancelled"
     except Exception as exc:                          # surface failures to the UI
-        import traceback
         traceback.print_exc()
         with LOCK:
             JOB["state"] = "error"
@@ -68,8 +68,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         self.send_response(code)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
-        self.send_header("Cache-Control", "no-store")
-        self.end_headers()
+        self.end_headers()                            # adds the no-cache header (see below)
         self.wfile.write(body)
 
     def end_headers(self) -> None:
@@ -109,7 +108,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 self._json({"error": "already running"}, 409)
                 return
             JOB.update(state="running", done=0, total=0, error="")
-        CANCEL.clear()
+            CANCEL.clear()                            # clear under the lock so a /cancel can't be lost
         threading.Thread(target=run_job, args=(params,), daemon=True).start()
         self._json({"ok": True})
 

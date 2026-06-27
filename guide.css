@@ -1,0 +1,74 @@
+/* Shared styling for the documentation pages (docs.html, users-guide.html).
+   Matches the app's dark theme (see the :root palette in index.html). */
+:root { --bg:#1a1c20; --panel:#24272d; --ink:#e8eaed; --muted:#9aa0a8;
+        --accent:#e02828; --line:#3a3e45; --cursor:#2bd1ff; --ok:#37b24d; }
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body { margin:0; background:var(--bg); color:var(--ink);
+       font:16px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+a { color:var(--cursor); text-decoration:none; }
+a:hover { text-decoration:underline; }
+
+.wrap { display:flex; gap:36px; max-width:1180px; margin:0 auto; padding:32px 24px 96px; align-items:flex-start; }
+
+/* sticky table of contents */
+nav { position:sticky; top:24px; width:230px; flex:none; font-size:13.5px; }
+nav .navtitle { text-transform:uppercase; letter-spacing:.07em; font-size:11px; color:var(--muted); margin:0 0 10px; font-weight:700; }
+nav a { display:block; color:var(--muted); padding:3px 0; border-left:2px solid transparent; padding-left:10px; margin-left:-12px; }
+nav a:hover { color:var(--ink); text-decoration:none; }
+nav a.sub { padding-left:24px; font-size:12.5px; }
+
+main { flex:1; min-width:0; max-width:820px; }
+h1 { font-size:30px; margin:0 0 6px; font-weight:700; letter-spacing:-.01em; }
+.lede { color:var(--muted); font-size:17px; margin:0 0 8px; }
+h2 { font-size:23px; margin:46px 0 12px; padding-top:14px; border-top:1px solid var(--line); font-weight:700; }
+h3 { font-size:18px; margin:28px 0 6px; font-weight:600; color:#f4f6f8; }
+p, li { color:#dfe2e6; }
+ul, ol { padding-left:22px; }
+li { margin:5px 0; }
+code { background:#16181c; border:1px solid var(--line); border-radius:4px; padding:1px 5px; font-size:13.5px;
+       font-family:"SF Mono", ui-monospace, Menlo, Consolas, monospace; color:#ffd9a8; }
+strong { color:#fff; }
+.tag { display:inline-block; font-size:12px; font-weight:700; padding:1px 8px; border-radius:10px; vertical-align:1px; }
+.tag.w { background:#2a2030; color:#ff9bd0; }
+.tag.r { background:#10242b; color:#7fe3ff; }
+
+pre { background:#121417; border:1px solid var(--line); border-radius:8px; padding:12px 14px; overflow-x:auto; font-size:13.5px;
+      font-family:"SF Mono", ui-monospace, Menlo, Consolas, monospace; color:#dfe2e6; line-height:1.5; }
+pre code { background:none; border:0; padding:0; color:inherit; }
+
+table { border-collapse:collapse; width:100%; margin:14px 0; font-size:13.5px; }
+th, td { border:1px solid var(--line); padding:7px 10px; text-align:left; vertical-align:top; }
+th { background:#2c2f36; color:#fff; font-weight:600; }
+td code { white-space:nowrap; }
+tr:nth-child(even) td { background:#21242a; }
+
+.box { border:1px solid var(--line); border-left-width:4px; border-radius:8px; padding:12px 16px; margin:16px 0; background:#20242a; }
+.box p:first-child { margin-top:0; } .box p:last-child { margin-bottom:0; }
+.box.tip  { border-left-color:var(--ok); }
+.box.warn { border-left-color:#e0a400; }
+.box.key  { border-left-color:var(--cursor); }
+.box .lbl { font-weight:700; font-size:12px; text-transform:uppercase; letter-spacing:.06em; }
+.box.tip  .lbl { color:var(--ok); }
+.box.warn .lbl { color:#e0a400; }
+.box.key  .lbl { color:var(--cursor); }
+
+.topbar { max-width:1180px; margin:0 auto; padding:14px 24px; display:flex; justify-content:space-between; align-items:center;
+          border-bottom:1px solid var(--line); font-size:14px; gap:16px; flex-wrap:wrap; }
+.guidetabs { display:flex; gap:6px; align-items:center; }
+.guidetabs a { padding:6px 12px; border-radius:6px; color:var(--muted); font-weight:600; }
+.guidetabs a:hover { color:var(--ink); text-decoration:none; }
+.guidetabs a.active { background:#2c2f36; color:#fff; }
+.guidetabs a.home { background:var(--accent); color:#fff; }
+.guidetabs a.home:hover { filter:brightness(1.08); }
+.muted { color:var(--muted); }
+
+/* beginner's-guide-only blocks (harmless if unused) */
+.two { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+.card { border:1px solid var(--line); border-radius:8px; padding:14px 16px; background:#20242a; }
+.card h3 { margin-top:0; }
+dt { font-weight:600; color:#fff; margin-top:14px; }
+dd { margin:2px 0 0; color:#dfe2e6; }
+
+footer { color:var(--muted); font-size:13px; margin-top:54px; padding-top:16px; border-top:1px solid var(--line); }
+@media (max-width: 860px) { nav { display:none; } .wrap { padding-top:20px; } .two { grid-template-columns:1fr; } }

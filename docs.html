@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Retinotopy movie maker — Beginner's guide</title>
+<link rel="stylesheet" href="guide.css">
+</head>
+<body>
+
+<div class="topbar">
+  <span><strong>Retinotopy movie maker</strong></span>
+  <span class="guidetabs">
+    <a class="active" href="docs.html">Beginner's guide</a>
+    <a href="users-guide.html">User's guide</a>
+    <a class="home" href="index.html">App &rarr;</a>
+  </span>
+</div>
+
+<div class="wrap">
+  <nav>
+    <p class="navtitle">Contents</p>
+    <a href="#what">What this is</a>
+    <a href="#picture">The big picture</a>
+    <a href="#wedges-rings">Wedges vs. rings</a>
+    <a href="#concepts">Key ideas, explained</a>
+    <a class="sub" href="#c-msequence">The on/off schedule</a>
+    <a class="sub" href="#c-noise">1/f noise</a>
+    <a class="sub" href="#c-sf-tf">Spatial &amp; temporal frequency</a>
+    <a class="sub" href="#c-orientation">Orientation</a>
+    <a class="sub" href="#c-background">Background</a>
+    <a class="sub" href="#c-fixation">Fixation spot</a>
+    <a href="#controls">Every control</a>
+    <a href="#watch">Things to watch for</a>
+    <a href="#outputs">What comes out</a>
+  </nav>
+
+  <main>
+    <h1>Beginner's guide</h1>
+    <p class="lede">What this tool makes and what every setting does, explained from
+      scratch — no background in vision or neuroscience needed. For the operating
+      manual and technical reference, see the <a href="users-guide.html">User's guide</a>.</p>
+
+    <h2 id="what">What this is</h2>
+    <p>This tool makes short <strong>movies</strong> used in brain-imaging experiments. The
+      movies are played to a person lying in an MRI scanner so researchers can figure out
+      <em>how that person's visual brain is wired</em> — a standard technique called
+      <strong>retinotopic mapping</strong>. You don't need to understand the brain side to use
+      the tool; this page explains every idea from the ground up.</p>
+    <p>A finished movie is just a folder of images (one per frame) plus a few summary
+      pictures and a data file describing exactly what was shown.</p>
+
+    <div class="box key">
+      <p class="lbl">In one sentence</p>
+      <p>We carve a circle into pieces, flicker each piece with colourful textured static on
+        a clever schedule, and record the brain — and from that we can reconstruct a map of
+        the person's visual world.</p>
+    </div>
+
+    <h2 id="picture">The big picture</h2>
+    <p>The screen shows a <strong>gray background</strong> with a small <strong>dot in the
+      centre</strong> that the viewer stares at the whole time (this is the
+      <a href="#c-fixation">fixation spot</a>). Centred on that dot is a <strong>disc</strong>
+      (a filled circle). The disc is divided into <strong>regions</strong>, and each region
+      switches between showing <strong>textured noise</strong> and showing nothing (just
+      background), over and over, on its own schedule.</p>
+
+    <p>Why bother? The back of your brain holds an orderly <strong>map of what you see</strong>:
+      neighbouring spots in the world light up neighbouring spots of brain. To measure that
+      map, two things about each point in the visual field must be pinned down:</p>
+    <ul>
+      <li><strong>Its angle</strong> — where it sits around the clock-face of your vision
+        (3 o'clock? straight up?).</li>
+      <li><strong>Its eccentricity</strong> — how far out from the centre of gaze it is
+        (right next to where you're looking, or far out in the corner of your eye).</li>
+    </ul>
+    <p>The two region shapes this tool offers each target one of those:</p>
+
+    <h2 id="wedges-rings">Wedges vs. rings</h2>
+    <div class="two">
+      <div class="card">
+        <h3><span class="tag w">wedges</span> measure <em>angle</em></h3>
+        <p>The disc is cut into <strong>pie slices</strong>. Each slice covers one range of
+          angles around the centre. Lighting up slices in turn tells you which part of the
+          brain handles each <strong>direction</strong> in the visual field
+          (polar-angle mapping).</p>
+        <p class="muted">Think: a pizza, or the hours on a clock.</p>
+      </div>
+      <div class="card">
+        <h3><span class="tag r">rings</span> measure <em>distance</em></h3>
+        <p>The disc is cut into <strong>concentric circles</strong> (like a dartboard). Each
+          ring covers one band of distances from the centre. Lighting up rings in turn tells
+          you which part of the brain handles each <strong>eccentricity</strong>
+          (how far out) — this is eccentricity mapping.</p>
+        <p class="muted">Think: a dartboard, or ripples from a dropped stone.</p>
+      </div>
+    </div>
+    <p>You pick one with the <strong>stimulus</strong> control at the top of the form.
+      <em>Everything else in the tool works exactly the same for both</em> — the only
+      difference is the region shape. (Because of that, a few controls keep "wedge" in their
+      name even in rings mode; the form relabels them to "ring" for you.)</p>
+
+    <h2 id="concepts">Key ideas, explained</h2>
+
+    <h3 id="c-msequence">The on/off schedule (m-sequence &amp; "multifocal")</h3>
+    <p>The obvious way to map the brain is to show one region at a time. That works but is
+      <em>slow</em>. Instead this tool turns <strong>all regions on and off at once</strong>,
+      each following its own on/off schedule, and untangles them afterward in software. That
+      "everybody at once" approach is called a <strong>multifocal</strong> design.</p>
+    <p>The schedules come from a mathematical pattern called an
+      <strong>m-sequence</strong> (short for <em>maximum-length sequence</em>) — a string of
+      0s and 1s with a special property: it barely resembles shifted copies of itself. Each
+      region uses a different shift of the same sequence, so no two regions share a pattern,
+      and the analysis can cleanly separate each region's contribution from a single
+      recording. The schedule has <strong>63 steps</strong>; each step is called a
+      <strong>state</strong>.</p>
+    <div class="box tip">
+      <p class="lbl">why it's clever</p>
+      <p>Because the schedules are nearly uncorrelated, testing 8 (or 63) regions
+        simultaneously is almost as informative as testing each alone — but many times
+        faster.</p>
+    </div>
+
+    <h3 id="c-noise">Why textured "noise", and what 1/f means</h3>
+    <p>Each <em>on</em> region isn't filled with a solid colour — it's filled with
+      <strong>noise</strong>: a colourful, finely textured static. Rich texture drives far
+      more of the visual brain than a flat patch, which makes the recording more informative
+      (and lets researchers fit detailed "encoding models" of what each bit of brain prefers).</p>
+    <p>The specific recipe is <strong>1/f noise</strong>. That's the same statistical signature
+      found in ordinary photographs: <strong>plenty of large, smooth features and progressively
+      fewer tiny ones</strong>. It looks natural rather than harsh. ("1/f" just means the
+      amount of texture falls off as the features get finer.) You can switch this to
+      <code>flat</code> (every feature size equally strong) if you prefer.</p>
+
+    <h3 id="c-sf-tf">Two kinds of "frequency": spatial and temporal</h3>
+    <p>"Frequency" sounds technical but here it means two simple things:</p>
+    <ul>
+      <li><strong>Spatial frequency = how fine the texture is.</strong> Low = big coarse
+        blobs; high = fine, detailed grain. You set a <em>range</em> (a low and a high cutoff)
+        so the texture contains feature sizes only within that band. Units are
+        <strong>cycles across the width</strong> — e.g. <code>2</code> means a feature that
+        repeats twice across the whole disc (very coarse); <code>128</code> is fine detail.</li>
+      <li><strong>Temporal frequency = how fast the texture shimmers</strong> over time. Low =
+        slow drift; high = fast flicker. Measured in <strong>Hz</strong> (changes per second).
+        You again set a low and a high cutoff.</li>
+    </ul>
+    <div class="box tip">
+      <p class="lbl">handy</p>
+      <p>If you change the <strong>movie width</strong>, the tool automatically rescales the
+        spatial-frequency band so the texture keeps the same look (and stays valid). See
+        <a href="#watch">Things to watch for</a>.</p>
+    </div>
+
+    <h3 id="c-orientation">Orientation (which way the texture "points")</h3>
+    <p>The noise isn't just blobby — it's given a <strong>direction</strong>, like faint
+      stripes. <strong>Orientation</strong> is the angle of those stripes:
+      <strong>0° = horizontal, 90° = vertical.</strong> The visual brain cares a lot about
+      orientation, so it's a useful extra dimension to probe.</p>
+    <p>Crucially, each on-region's orientation is set by a <strong>second, independent
+      m-sequence</strong>. So every active region carries <em>two</em> separable pieces of
+      information at once: <em>whether</em> it's on, and <em>which way</em> its texture points.
+      The <strong># orientations</strong> control chooses how many equally-spaced directions
+      are in play (2 → horizontal &amp; vertical; 4 → adds the two diagonals; etc.).</p>
+
+    <h3 id="c-background">The background behind the regions</h3>
+    <p>What fills the disc <em>around</em> the active regions is up to you:</p>
+    <ul>
+      <li><span class="tag" style="background:#2c2f36;color:#cfd3d8">gray</span> — plain flat
+        gray (the simplest, most neutral choice).</li>
+      <li><span class="tag" style="background:#2c2f36;color:#cfd3d8">random</span> — full-screen
+        textured noise with <em>no</em> particular direction (all orientations mixed).</li>
+      <li><span class="tag" style="background:#2c2f36;color:#cfd3d8">oriented</span> —
+        full-screen <em>directional</em> noise whose angle is chosen, each state, to point as
+        differently as possible from the active regions' stripes. This keeps the regions
+        "popping out" from the background by orientation.</li>
+    </ul>
+
+    <h3 id="c-fixation">The fixation spot</h3>
+    <p>A tiny <strong>2×2-pixel square at the exact centre</strong> that the viewer fixates on
+      throughout. It <strong>changes to a random colour twice a second</strong>, which gives
+      the viewer a little task (helping them hold their gaze steady) and marks the centre.
+      Its colour sequence is recorded so you know exactly what was shown.</p>
+
+    <h2 id="controls">Every control, explained</h2>
+    <p>Defaults are in <code>()</code>. Controls that only matter for one geometry are tagged
+      <span class="tag w">wedges</span> or <span class="tag r">rings</span>.</p>
+    <dl>
+      <dt>stimulus <span class="muted">(wedges)</span></dt>
+      <dd>Region shape: <strong>wedges</strong> (pie slices → angle map) or <strong>rings</strong>
+        (concentric circles → distance map). Everything else is identical between them.</dd>
+
+      <dt>movie width (pix) <span class="muted">(512)</span></dt>
+      <dd>Size of the square movie in pixels (so <code>512</code> = 512×512). Bigger = sharper
+        but slower to make and larger files.</dd>
+
+      <dt># wedges / # rings <span class="muted">(8)</span></dt>
+      <dd>How many regions the disc is split into. More regions = a finer map but each is
+        smaller. Capped at <strong>63</strong> (the schedule length). Ring 1 is the innermost.</dd>
+
+      <dt>wedges / rings shown <span class="muted">(all)</span></dt>
+      <dd>Tick boxes to show only <em>some</em> regions (with all / none / alternate shortcuts).
+        Hidden regions simply never turn on. Handy for, say, presenting every other ring.</dd>
+
+      <dt>wedge rotation (deg) <span class="tag w">wedges</span> <span class="muted">(22.5)</span></dt>
+      <dd>Rotates where the slice boundaries fall, without changing anything else. The default
+        22.5° shifts every cut by half a slice, so no boundary sits exactly on the horizontal
+        or vertical.</dd>
+
+      <dt>ring spacing <span class="tag r">rings</span> <span class="muted">(log)</span></dt>
+      <dd>How the rings are spaced from centre to edge:
+        <ul>
+          <li><code>log</code> — thin near the centre, thick toward the edge. This matches how
+            the brain devotes more area to central vision, and is the usual choice.</li>
+          <li><code>equal_width</code> — every ring the same thickness on screen.</li>
+          <li><code>equal_area</code> — every ring the same screen area (so they get thinner
+            outward).</li>
+        </ul></dd>
+
+      <dt>wedge / ring duration (sec) <span class="muted">(4.1)</span></dt>
+      <dd>How long each of the 63 states is shown before moving to the next.</dd>
+
+      <dt>frame rate (hz) <span class="muted">(30)</span></dt>
+      <dd>Frames shown per second — the movie's playback/refresh speed.</dd>
+
+      <dt>color / BW <span class="muted">(color)</span></dt>
+      <dd><code>color</code> gives independently coloured texture (each fine feature a random
+        colour); <code>bw</code> gives grayscale.</dd>
+
+      <dt>temporal frequency: shape, lowest, highest <span class="muted">(1/f, 0.5–15 Hz)</span></dt>
+      <dd>How fast the texture changes over time. <strong>shape</strong> is <code>1/f</code>
+        (natural-looking) or <code>flat</code>; <strong>lowest/highest</strong> set the
+        flicker-speed band in Hz.</dd>
+
+      <dt>spatial frequency: shape, lowest, highest <span class="muted">(1/f, 2–128 cyc/width)</span></dt>
+      <dd>How fine the texture is. <strong>lowest/highest</strong> set the range of feature
+        sizes, in cycles across the width (small = coarse, large = fine). Changing the movie
+        width auto-rescales these so the look is preserved.</dd>
+
+      <dt># orientations <span class="muted">(2)</span></dt>
+      <dd>How many equally-spaced stripe directions the textures can take. <code>2</code> →
+        horizontal &amp; vertical; <code>4</code> → add the diagonals.</dd>
+
+      <dt>background <span class="muted">(gray)</span></dt>
+      <dd><code>gray</code>, <code>random</code> (undirected noise), or <code>oriented</code>
+        (directional noise pointed away from the active regions). See above.</dd>
+
+      <dt>fade between states (frames) <span class="muted">(5)</span></dt>
+      <dd>Each region eases on and off over this many frames instead of snapping, so the
+        movie isn't jarring.</dd>
+
+      <dt>padding before/after (sec) <span class="muted">(2)</span></dt>
+      <dd>Seconds of plain full-screen noise added at the start and end — useful as lead-in /
+        lead-out for a scanner run.</dd>
+
+      <dt>fixation spot <span class="muted">(on)</span></dt>
+      <dd>Turns the central colour-changing dot on or off.</dd>
+
+      <dt>demo / full <span class="muted">(demo)</span></dt>
+      <dd><code>demo</code> renders just the first 5 states for a quick preview;
+        <code>full</code> renders all 63 (the real experiment — much slower).</dd>
+    </dl>
+
+    <h2 id="watch">Things to watch for</h2>
+    <p>A few real limits, in plain terms:</p>
+    <ul>
+      <li><strong>You can't flicker faster than half the frame rate.</strong> At 30 frames/s
+        the fastest meaningful flicker is <strong>15 Hz</strong>. Asking for more just creates
+        artefacts. (This is the "Nyquist" limit.)</li>
+      <li><strong>You can't show detail finer than the pixels allow.</strong> The finest texture
+        is set by the movie width; the highest spatial frequency caps at half the width.</li>
+      <li><strong>Horizontal and vertical are "perfect"; diagonals are approximate.</strong>
+        0° and 90° land exactly on the pixel grid; other angles are built from a thin slice of
+        directions, so they're slightly broader.</li>
+      <li><strong>Neighbouring regions show a seam.</strong> Each region's noise is independent
+        (its own random seed), so two adjacent regions don't blend — this is intentional and
+        keeps them separable.</li>
+      <li><strong>Fades go to the background, not across states.</strong> Between states the
+        screen returns to the background; states don't cross-dissolve into each other.</li>
+      <li><strong>Same settings → identical movie.</strong> The randomness is seeded, so
+        regenerating with the same parameters reproduces the exact same movie.</li>
+    </ul>
+
+    <h3>How many background orientations will I get?</h3>
+    <p>With the <code>oriented</code> background, its angle is recomputed each state to point
+      away from whatever orientations the active regions are showing. How many <em>distinct</em>
+      background angles appear over a run depends on the number of regions and the number of
+      orientations:</p>
+    <table>
+      <thead><tr><th># wedges/rings</th><th># orientations (K)</th><th># background orientations</th><th>values (deg)</th></tr></thead>
+      <tbody>
+        <tr><td>4</td><td>1</td><td>2</td><td>0, 90</td></tr>
+        <tr><td>8</td><td>1</td><td>1</td><td>90</td></tr>
+        <tr><td>4</td><td><strong>2</strong></td><td><strong>3</strong></td><td>0, 45, 90</td></tr>
+        <tr><td><strong>8</strong></td><td><strong>2</strong></td><td><strong>3</strong></td><td><strong>0, 45, 90</strong></td></tr>
+        <tr><td>12</td><td>2</td><td>2</td><td>0, 45</td></tr>
+        <tr><td>16</td><td>2</td><td>1</td><td>45</td></tr>
+        <tr><td>8</td><td>3</td><td>5</td><td>0, 30, 60, 90, 120</td></tr>
+        <tr><td>8</td><td>4</td><td>8</td><td>0, 22.5, 45, 67.5, 90, 112.5, 135, 157.5</td></tr>
+      </tbody>
+    </table>
+    <p>With the defaults (<strong>8 regions, 2 orientations</strong>) you get
+      <strong>3 background orientations: 0°, 45°, 90°</strong>. Note the surprising twist:
+      <strong>more regions gives <em>fewer</em> background orientations</strong>, because with
+      many regions on at once it's likely <em>all</em> orientations are present, and that
+      always maps to the single "in-between" angle. If you want the background to <em>vary</em>,
+      use fewer regions or more orientations.</p>
+
+    <h2 id="outputs">What comes out</h2>
+    <p>Generating a movie writes, next to the program:</p>
+    <ul>
+      <li><code>frames/frame_00000.png</code>, <code>…00001.png</code>, … — the movie itself,
+        one image per frame.</li>
+      <li><code>movie_meta.json</code> — a complete record of <em>everything</em> that was
+        shown (geometry, the full on/off and orientation schedules for all 63 states,
+        background angles, fixation colours, timing, and all settings). Enough to reconstruct
+        the experiment exactly.</li>
+      <li><code>design_matrix.png</code> / <code>orientation_matrix.png</code> — at-a-glance
+        pictures of the on/off and orientation schedules (states down, regions across).</li>
+      <li><code>temporal_spectrum.png</code>, <code>spatial_spectrum.png</code>,
+        <code>orientation_spectrum.png</code> — measured-vs-ideal checks that the noise really
+        has the texture you asked for.</li>
+    </ul>
+    <p>The viewer on the <a href="index.html">main page</a> plays the movie and shows all of
+      these together, with a moving cursor that tracks which state is on screen.</p>
+
+    <footer>
+      Retinotopy movie maker. For the concise technical reference (formulas, m-sequence taps,
+      exact units), see <code>README.md</code> in the project folder.
+    </footer>
+  </main>
+</div>
+</body>
+</html>

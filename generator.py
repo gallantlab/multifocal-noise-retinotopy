@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 """Generate multifocal m-sequence retinotopy noise movies.
 
-The stimulus is a disc split into ``N`` equal wedges. A binary maximum-length
-sequence (m-sequence) turns each wedge on/off across 63 *states*; a second,
-independent m-sequence sets each on-wedge's noise *orientation*. Each on-wedge is
-filled with bandpass 1/f spatiotemporal noise (multicolored or grayscale),
-confined to a single orientation, and independent from every other wedge. States
-fade in/out to the background, and the movie can be padded with full-screen
-isotropic noise.
+The stimulus is a disc split into ``N`` regions. In **wedges** geometry the disc
+is split into equal angular sectors (polar-angle mapping); in **rings** geometry
+it is split into ``N`` concentric annuli (eccentricity mapping). A binary
+maximum-length sequence (m-sequence) turns each region on/off across 63 *states*;
+a second, independent m-sequence sets each on-region's noise *orientation*. Each
+on-region is filled with bandpass 1/f spatiotemporal noise (multicolored or
+grayscale), confined to a single orientation, and independent from every other
+region. States fade in/out to the background, and the movie can be padded with
+full-screen isotropic noise.
 
 The single public entry point is :func:`generate_movie`, which writes a PNG
 sequence to ``frames/`` plus spectra plots, design/orientation matrices, and
@@ -28,6 +30,7 @@ from __future__ import annotations
 import json
 import math
 import os
+from collections.abc import Callable
 
 import matplotlib
 matplotlib.use("Agg")
@@ -49,17 +52,24 @@ ONOFF_TAPS = [6, 1]            # primitive poly x^6+x+1     : on/off m-sequence
 ORIENT_TAPS = [6, 4, 3, 1]     # primitive poly x^6+x^4+x^3+x+1: orientation m-sequence
 DEMO_STATES = 5                # states rendered in "demo" mode
 WEDGE_HALFWIDTH = 4.0          # angular half-width (deg) of off-axis orientation wedges
+RING_FOVEA_FRAC = 0.05         # foveal radius offset (frac of max radius) for log ring spacing
+RING_SPACINGS = ("log", "equal_width", "equal_area")
 
 #: Default parameters (mirror INTERFACE.txt). ``generate_movie`` fills missing keys.
+#: The ``n_wedges`` / ``wedge_*`` keys are generic *region* parameters that apply to
+#: both geometries (a "region" is an angular wedge or a concentric ring); the names
+#: are kept for backward compatibility with previously saved movies and the UI.
 DEFAULTS = {
+    "geometry": "wedges",                                # wedges | rings
     "width": 512, "n_wedges": 8, "wedge_rotation": 22.5, "wedge_sec": 4.1, "fps": 30,
+    "ring_spacing": "log",                               # log | equal_width | equal_area (rings only)
     "color": "color",                                    # color | bw
     "tf_shape": "1/f", "tf_lo": 0.5, "tf_hi": 15.0,      # 1/f | flat
-    "sf_shape": "1/f", "sf_lo": 2.0, "sf_hi": 128.0,
+    "sf_shape": "1/f", "sf_lo": 2.0, "sf_hi": 128.0,     # cyc/width (cycles across the movie width)
     "n_orientations": 2,
-    "background": "gray",                                # gray | random
+    "background": "gray",                                # gray | random | oriented
     "fade_frames": 5, "pad_sec": 2.0,
-    "fixation": "off",                                   # off | on (central 2x2 spot)
+    "fixation": "on",                                    # off | on (central 2x2 spot)
     "mode": "demo",                                      # demo | full
 }
 
@@ -102,24 +112,25 @@ def m_sequence(order: int, taps: list[int], seed: int = 1) -> list[int]:
     return seq
 
 
-def build_design(n_wedges: int, n_orientations: int):
+def build_design(n_regions: int, n_orientations: int
+                 ) -> tuple[np.ndarray, np.ndarray, list[float], int]:
     """Build the on/off and orientation designs from two m-sequences.
 
-    Both designs use a distinct circular shift of an m-sequence per wedge so the
-    wedge regressors are near-orthogonal. The orientation index is decoded from
+    Both designs use a distinct circular shift of an m-sequence per region so the
+    region regressors are near-orthogonal. The orientation index is decoded from
     ``ceil(log2 K)`` consecutive bits of the orientation sequence (``mod K``) --
     a pragmatic K-ary decoder, exact only for ``K == 2`` (see README).
 
     Parameters
     ----------
-    n_wedges, n_orientations : int
+    n_regions, n_orientations : int
 
     Returns
     -------
-    design : np.ndarray, shape (L, n_wedges), int
-        1 where a wedge is on in a given state.
-    orient_index : np.ndarray, shape (L, n_wedges), int in [0, K)
-        Orientation index per wedge per state.
+    design : np.ndarray, shape (L, n_regions), int
+        1 where a region is on in a given state.
+    orient_index : np.ndarray, shape (L, n_regions), int in [0, K)
+        Orientation index per region per state.
     angles : list[float]
         The ``K`` equally spaced image orientations in degrees (``i*180/K``).
     L : int
@@ -128,18 +139,18 @@ def build_design(n_wedges: int, n_orientations: int):
     onoff = m_sequence(LFSR_N, ONOFF_TAPS)
     oseq = m_sequence(LFSR_N, ORIENT_TAPS)
     L = len(onoff)
-    shifts = [round(k * L / n_wedges) for k in range(n_wedges)]
+    shifts = [round(k * L / n_regions) for k in range(n_regions)]
     n_bits = max(1, math.ceil(math.log2(n_orientations))) if n_orientations > 1 else 1
 
-    def orient_at(state: int, wedge: int) -> int:
+    def orient_at(state: int, region: int) -> int:
         bits = 0
         for j in range(n_bits):
-            bits |= oseq[(state + shifts[wedge] + j) % L] << j
+            bits |= oseq[(state + shifts[region] + j) % L] << j
         return bits % n_orientations
 
-    design = np.array([[onoff[(s + shifts[k]) % L] for k in range(n_wedges)]
+    design = np.array([[onoff[(s + shifts[k]) % L] for k in range(n_regions)]
                        for s in range(L)], dtype=int)
-    orient_index = np.array([[orient_at(s, k) for k in range(n_wedges)]
+    orient_index = np.array([[orient_at(s, k) for k in range(n_regions)]
                              for s in range(L)], dtype=int)
     angles = [i * 180.0 / n_orientations for i in range(n_orientations)]
     return design, orient_index, angles, L
@@ -238,8 +249,8 @@ def temporal_filter(n_frames: int, fps: int, tf_lo: float, tf_hi: float,
 
 
 # ============================================================ noise synthesis
-def make_noise(seed: int, H: np.ndarray, width: int, n_frames: int,
-               color: str, want_lum: bool = False):
+def make_noise(seed: int, H: np.ndarray, width: int, n_frames: int, color: str,
+               want_lum: bool = False) -> tuple[np.ndarray, np.ndarray | None]:
     """Render one colored/grayscale bandpass noise block.
 
     White noise is shaped by the separable filter ``H`` in the 3-D Fourier domain
@@ -271,7 +282,8 @@ def make_noise(seed: int, H: np.ndarray, width: int, n_frames: int,
         white = rng.standard_normal((width, width, n_frames))
         noise = np.fft.irfftn(np.fft.rfftn(white, axes=(0, 1, 2)) * H,
                               s=(width, width, n_frames), axes=(0, 1, 2))
-        noise /= noise.std()
+        std = noise.std()
+        noise /= std if std > 0 else 1.0              # guard an all-zero (empty-band) filter
         fields.append(noise)
     for c in range(3):                                # bw replicates the single field
         rgb[..., c] = np.clip(BG + GAIN * fields[c % n_channels], 0, 255).astype(np.uint8)
@@ -280,6 +292,20 @@ def make_noise(seed: int, H: np.ndarray, width: int, n_frames: int,
 
 
 # ============================================================ geometry
+def _disc_grid(width: int) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Centered coordinate grids and the unit-disc mask for a ``width × width`` field.
+
+    Returns ``(gx, gy, r, disc)``: pixel offsets from the center (``gx`` rightward,
+    ``gy`` downward), radius ``r = hypot(gx, gy)``, and the boolean disc mask
+    ``r <= width/2``. Pixel centers are sampled at ``i + 0.5``.
+    """
+    center = width / 2.0
+    coord = np.arange(width) + 0.5
+    gx, gy = np.meshgrid(coord - center, coord - center)
+    r = np.hypot(gx, gy)
+    return gx, gy, r, r <= width / 2.0
+
+
 def wedge_masks(width: int, n_wedges: int, rotation: float = 0.0) -> list[np.ndarray]:
     """Boolean pixel mask per wedge: inside the disc and in the wedge's sector.
 
@@ -288,13 +314,53 @@ def wedge_masks(width: int, n_wedges: int, rotation: float = 0.0) -> list[np.nda
     counter-clockwise by ``rotation`` degrees (e.g. ``360/(2·n_wedges)`` puts the
     divisions halfway between the default ones).
     """
-    center = width / 2.0
-    coord = np.arange(width) + 0.5
-    gx, gy = np.meshgrid(coord - center, coord - center)
-    disc = np.hypot(gx, gy) <= width / 2.0
+    gx, gy, _, disc = _disc_grid(width)
     angle = (np.degrees(np.arctan2(-gy, gx)) - rotation) % 360.0
     step = 360.0 / n_wedges
     return [disc & (angle >= k * step) & (angle < (k + 1) * step) for k in range(n_wedges)]
+
+
+def ring_boundaries(n_rings: int, radius: float, spacing: str) -> np.ndarray:
+    """Radii (length ``n_rings+1``) delimiting ``n_rings`` concentric annuli of the disc.
+
+    Boundaries run from ``0`` (fovea) to ``radius`` (disc edge). The spacing sets
+    how eccentricity is sampled:
+
+    - ``"equal_width"``: equal radial thickness, ``r_k = radius * k/n``.
+    - ``"equal_area"``: equal screen area per ring, ``r_k = radius * sqrt(k/n)``
+      (rings thin outward).
+    - ``"log"``: equal spacing in ``log(r + r0)`` with a small foveal offset
+      ``r0 = RING_FOVEA_FRAC * radius``, so rings are thin near the fovea and thick
+      in the periphery (~equal cortical area; the retinotopy standard). Still
+      spans ``[0, radius]`` exactly because of the offset.
+    """
+    k = np.arange(n_rings + 1)
+    if spacing == "equal_width":
+        return radius * k / n_rings
+    if spacing == "equal_area":
+        return radius * np.sqrt(k / n_rings)
+    r0 = radius * RING_FOVEA_FRAC                          # log (default)
+    return r0 * ((radius + r0) / r0) ** (k / n_rings) - r0
+
+
+def ring_masks(width: int, n_rings: int, spacing: str = "log") -> list[np.ndarray]:
+    """Boolean pixel mask per ring: inside the disc and within the ring's annulus.
+
+    Ring ``0`` is the innermost (foveal) disc; ring ``n_rings-1`` reaches the disc
+    edge. ``spacing`` is one of :data:`RING_SPACINGS` (see :func:`ring_boundaries`).
+    """
+    _, _, r, disc = _disc_grid(width)
+    radius = width / 2.0
+    if spacing not in RING_SPACINGS:
+        spacing = "log"
+    b = ring_boundaries(n_rings, radius, spacing)
+    masks = []
+    for k in range(n_rings):
+        if k == n_rings - 1:                              # outer ring: disc handles the edge
+            masks.append(disc & (r >= b[k]))
+        else:
+            masks.append(disc & (r >= b[k]) & (r < b[k + 1]))
+    return masks
 
 
 def fade_envelope(n_frames: int, fade_frames: int) -> np.ndarray:
@@ -310,7 +376,7 @@ def fade_envelope(n_frames: int, fade_frames: int) -> np.ndarray:
 
 # ============================================================ figures
 def render_design_matrix(design: np.ndarray, out: str, row_h: int = 8, col_w: int = 44) -> None:
-    """Render the on/off design matrix (states x wedges; red=on, white=off)."""
+    """Render the on/off design matrix (states x regions; red=on, white=off)."""
     L, N = design.shape
     on, off, line = np.array([200, 40, 40]), np.array([245, 245, 245]), np.array([170, 170, 170])
     img = np.empty((L * row_h, N * col_w + (N + 1), 3), np.uint8)
@@ -324,7 +390,7 @@ def render_design_matrix(design: np.ndarray, out: str, row_h: int = 8, col_w: in
 
 def render_orientation_matrix(orient_index: np.ndarray, design: np.ndarray, n_orient: int,
                               out: str, row_h: int = 8, col_w: int = 44) -> None:
-    """Render the orientation matrix (states x wedges; one hue per orientation, off-wedges dimmed)."""
+    """Render the orientation matrix (states x regions; one hue per orientation, off-regions dimmed)."""
     L, N = orient_index.shape
     colors = np.array([cm.hsv(i / max(n_orient, 1))[:3] for i in range(n_orient)]) * 255
     line, dim = np.array([170, 170, 170]), 0.32
@@ -375,12 +441,13 @@ def plot_temporal(noise: np.ndarray, fps: int, tf_lo: float, tf_hi: float,
     fig.patch.set_facecolor(_STYLE["panel"])
     ax.axvspan(tf_lo, tf_hi, color=_STYLE["ideal"], alpha=0.10)
     ax.loglog(ft[1:], np.maximum(power[1:], 1e-30), color=_STYLE["data"], lw=1.6, label="measured")
-    if shape == "1/f":
-        K = np.median(power[band] * ft[band] ** 2)
-        ax.loglog(ft[band], K / ft[band] ** 2, "--", color=_STYLE["ideal"], lw=1.4, label="ideal 1/f²")
-    else:
-        K = np.median(power[band])
-        ax.loglog(ft[band], np.full(band.sum(), K), "--", color=_STYLE["ideal"], lw=1.4, label="flat")
+    if band.any():                                    # skip the ideal fit if the band is empty
+        if shape == "1/f":
+            K = np.median(power[band] * ft[band] ** 2)
+            ax.loglog(ft[band], K / ft[band] ** 2, "--", color=_STYLE["ideal"], lw=1.4, label="ideal 1/f²")
+        else:
+            K = np.median(power[band])
+            ax.loglog(ft[band], np.full(band.sum(), K), "--", color=_STYLE["ideal"], lw=1.4, label="flat")
     ax.set_xlabel("temporal frequency (cyc/s)")
     ax.set_ylabel("power")
     ax.set_title("Temporal spectrum")
@@ -407,12 +474,13 @@ def plot_spatial(noise: np.ndarray, width: int, sf_lo: float, sf_hi: float,
     ax1.axvspan(sf_lo, sf_hi, color=_STYLE["ideal"], alpha=0.10)
     ax1.loglog(frs[1:width // 2], np.maximum(radial[1:width // 2], 1e-30),
                color=_STYLE["data"], lw=1.6, label="measured")
-    if shape == "1/f":
-        K = np.median(radial[band] * frs[band] ** 2)
-        ax1.loglog(frs[band], K / frs[band] ** 2, "--", color=_STYLE["ideal"], lw=1.4, label="ideal 1/f²")
-    else:
-        K = np.median(radial[band])
-        ax1.loglog(frs[band], np.full(band.sum(), K), "--", color=_STYLE["ideal"], lw=1.4, label="flat")
+    if band.any():                                    # skip the ideal fit if the band is empty
+        if shape == "1/f":
+            K = np.median(radial[band] * frs[band] ** 2)
+            ax1.loglog(frs[band], K / frs[band] ** 2, "--", color=_STYLE["ideal"], lw=1.4, label="ideal 1/f²")
+        else:
+            K = np.median(radial[band])
+            ax1.loglog(frs[band], np.full(band.sum(), K), "--", color=_STYLE["ideal"], lw=1.4, label="flat")
     ax1.set_xlabel("spatial frequency (cyc/width)")
     ax1.set_ylabel("power")
     ax1.set_title("Spatial spectrum (radial)")
@@ -467,7 +535,9 @@ def plot_orientation(noise: np.ndarray, width: int, sf_lo: float, sf_hi: float,
 
 
 # ============================================================ top-level
-def generate_movie(params: dict, progress_cb=None, cancel_cb=None) -> dict:
+def generate_movie(params: dict,
+                   progress_cb: Callable[[int, int], None] | None = None,
+                   cancel_cb: Callable[[], bool] | None = None) -> dict:
     """Render a full movie and its companion artifacts.
 
     Parameters
@@ -483,7 +553,7 @@ def generate_movie(params: dict, progress_cb=None, cancel_cb=None) -> dict:
     Returns
     -------
     dict
-        The metadata also written to ``movie_meta.json`` / ``movie_meta.js``.
+        The metadata also written to ``movie_meta.json``.
 
     Side effects
     ------------
@@ -491,7 +561,17 @@ def generate_movie(params: dict, progress_cb=None, cancel_cb=None) -> dict:
     metadata files into the project directory.
     """
     p = {**DEFAULTS, **(params or {})}
-    W, N, fps = int(p["width"]), int(p["n_wedges"]), int(p["fps"])
+    p["geometry"] = "rings" if p.get("geometry") == "rings" else "wedges"
+    p["ring_spacing"] = str(p.get("ring_spacing", "log")).replace(" ", "_").replace("-", "_")
+    if p["ring_spacing"] not in RING_SPACINGS:
+        p["ring_spacing"] = "log"
+    geometry = p["geometry"]
+    W, fps = int(p["width"]), int(p["fps"])
+    # Regions are capped to [1, L]: the design has L = 2**LFSR_N - 1 = 63 states, so more
+    # than L regions cannot get distinct m-sequence shifts (they would collide into
+    # duplicate, collinear regressors); fewer than 1 is degenerate. Mirrors the UI.
+    N = max(1, min(int(p["n_wedges"]), (1 << LFSR_N) - 1))
+    p["n_wedges"] = N
     K = max(1, int(p["n_orientations"]))
     frames_per_state = max(1, round(fps * float(p["wedge_sec"])))
     fade, pad = int(p["fade_frames"]), round(float(p["pad_sec"]) * fps)
@@ -505,8 +585,8 @@ def generate_movie(params: dict, progress_cb=None, cancel_cb=None) -> dict:
 
     # --- design, geometry, filters ---
     design, orient_index, angles, L = build_design(N, K)
-    # optional wedge subset: excluded wedges are forced always-off (background).
-    # The disc geometry and m-sequence are unchanged; only which wedges are ever
+    # optional region subset: excluded regions are forced always-off (background).
+    # The disc geometry and m-sequence are unchanged; only which regions are ever
     # shown is masked. wedge_mask is a length-N list of booleans (default all on).
     wedge_mask = p.get("wedge_mask")
     if not isinstance(wedge_mask, list) or len(wedge_mask) != N:
@@ -523,7 +603,8 @@ def generate_movie(params: dict, progress_cb=None, cancel_cb=None) -> dict:
                                          for k in range(N) if design[s, k]])
                  for s in range(L)] if bg_mode == "oriented" else []
     n_states = min(DEMO_STATES if p["mode"] == "demo" else L, L)
-    masks = wedge_masks(W, N, float(p["wedge_rotation"]))
+    masks = (ring_masks(W, N, p["ring_spacing"]) if geometry == "rings"
+             else wedge_masks(W, N, float(p["wedge_rotation"])))
     env = fade_envelope(frames_per_state, fade)
 
     # off-axis orientation wedges narrow as K grows, to avoid overlap
@@ -579,10 +660,15 @@ def generate_movie(params: dict, progress_cb=None, cancel_cb=None) -> dict:
     emit_padding(BASE_SEED + 7000)
     movie_start = saved[0]
 
-    spectra_lum: dict[int, np.ndarray] = {}     # one luminance carrier per orientation in state 0
+    # one luminance carrier per orientation, sampled from the first rendered state that
+    # has any on-regions (a subset mask can leave the early states blank).
+    spectra_lum: dict[int, np.ndarray] = {}
+    capture_state = None
     for s in range(n_states):
         check_cancel()
         on = [k for k in range(N) if design[s, k]]
+        if capture_state is None and on:
+            capture_state = s
         background = None
         if bg_mode == "random":
             background, _ = make_noise(BASE_SEED + 5000 + s, H_iso_state, W, frames_per_state, color)
@@ -594,7 +680,7 @@ def generate_movie(params: dict, progress_cb=None, cancel_cb=None) -> dict:
         for k in on:
             check_cancel()
             orient = orient_index[s, k]
-            capture = s == 0 and orient not in spectra_lum
+            capture = s == capture_state and orient not in spectra_lum
             rgb, lum = make_noise(BASE_SEED + s * N + k, H_orient[orient], W, frames_per_state,
                                   color, want_lum=capture)
             carriers[k] = rgb
@@ -604,25 +690,32 @@ def generate_movie(params: dict, progress_cb=None, cancel_cb=None) -> dict:
             base = (background[:, :, t, :].astype(float) if background is not None
                     else np.full((W, W, 3), BG, float))
             frame = base.copy()
-            for k in on:                          # blend each on-wedge toward the background by env
+            for k in on:                          # blend each on-region toward the background by env
                 carrier = carriers[k][:, :, t, :].astype(float)
                 frame[masks[k]] = (base + env[t] * (carrier - base))[masks[k]]
             emit(frame)
     movie_end = saved[0]
     emit_padding(BASE_SEED + 8000)
 
-    # --- spectra (sampled from state 0's carriers) ---
+    # --- spectra (sampled from the first non-empty state's carriers) ---
+    spectra_files = ["temporal_spectrum.png", "spatial_spectrum.png", "orientation_spectrum.png"]
     if spectra_lum:
         spectra = sum(spectra_lum.values())       # combine orientations -> multiple spikes
-        plot_temporal(spectra, fps, tf_lo, tf_hi, tf_shape, os.path.join(HERE, "temporal_spectrum.png"))
-        plot_spatial(spectra, W, sf_lo, sf_hi, sf_shape, os.path.join(HERE, "spatial_spectrum.png"))
+        plot_temporal(spectra, fps, tf_lo, tf_hi, tf_shape, os.path.join(HERE, spectra_files[0]))
+        plot_spatial(spectra, W, sf_lo, sf_hi, sf_shape, os.path.join(HERE, spectra_files[1]))
         plot_orientation(spectra, W, sf_lo, sf_hi, [angles[i] for i in spectra_lum],
-                         os.path.join(HERE, "orientation_spectrum.png"))
+                         os.path.join(HERE, spectra_files[2]))
+    else:
+        for fn in spectra_files:                  # no on-regions anywhere: drop stale spectra
+            stale = os.path.join(HERE, fn)
+            if os.path.exists(stale):
+                os.remove(stale)
     render_design_matrix(design, os.path.join(HERE, "design_matrix.png"))
     render_orientation_matrix(orient_index, design, K, os.path.join(HERE, "orientation_matrix.png"))
 
     # --- metadata for the viewer ---
     meta = {
+        "geometry": geometry, "ring_spacing": p["ring_spacing"],
         "width": W, "n_wedges": N, "wedge_rotation": float(p["wedge_rotation"]),
         "fps": fps, "wedge_sec": float(p["wedge_sec"]),
         "frames_per_state": frames_per_state, "generated_states": n_states, "total_states": L,
@@ -639,8 +732,6 @@ def generate_movie(params: dict, progress_cb=None, cancel_cb=None) -> dict:
         "design": design.tolist(), "orient_design": orient_index.tolist(),
         "params": p,
     }
-    with open(os.path.join(HERE, "movie_meta.js"), "w") as f:
-        f.write("window.MOVIE = " + json.dumps(meta) + ";\n")
     with open(os.path.join(HERE, "movie_meta.json"), "w") as f:
         json.dump(meta, f)
     if progress_cb:

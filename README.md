@@ -71,6 +71,7 @@ From `INTERFACE.txt` (defaults shown). All are exposed in the UI.
 |-----------|-------|---------|-------|
 | movie width | pixels | 512 | Frame is `width × width`. |
 | # wedges | – | 8 | Equal angular wedges of the disc. |
+| wedges shown | – | all on | Per-wedge include/exclude toggles (with all/none/alternate presets). Excluded wedges are always off; the geometry and m-sequence are unchanged. |
 | wedge duration | sec | 4.1 | Length of each state → `frames_per_state = round(fps·dur)`. |
 | frame rate | Hz | 30 | Render/display rate. |
 | color / BW | – | color | `color` = 3 independent RGB channels; `bw` = grayscale. |
@@ -154,6 +155,13 @@ field is `width` pixels. The spatial Nyquist is **`width/2`** cyc/width (256 for
 ### 7. Independent per-wedge noise → boundary discontinuities
 Each wedge gets its own seed, so adjacent wedges (even of the same orientation)
 are independent and show a visible seam at the boundary. This is intentional.
+
+### 7a. Wedge subsets
+"Wedges shown" masks the design: excluded wedges are forced always-off
+(`design[:, k] = 0`) and never display noise, while the disc geometry and the
+m-sequence shifts of the remaining wedges are unchanged. So "every other wedge"
+keeps the 8-wedge layout but only fills wedges 1, 3, 5, 7. The excluded columns
+appear empty in the on/off matrix and dimmed in the orientation matrix.
 
 ### 8. Color vs. BW
 `color` draws **three independent noise fields** through the same filter, so every

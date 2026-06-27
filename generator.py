@@ -474,6 +474,17 @@ def generate_movie(params: dict, progress_cb=None, cancel_cb=None) -> dict:
 
     # --- design, geometry, filters ---
     design, orient_index, angles, L = build_design(N, K)
+    # optional wedge subset: excluded wedges are forced always-off (background).
+    # The disc geometry and m-sequence are unchanged; only which wedges are ever
+    # shown is masked. wedge_mask is a length-N list of booleans (default all on).
+    wedge_mask = p.get("wedge_mask")
+    if not isinstance(wedge_mask, list) or len(wedge_mask) != N:
+        wedge_mask = [True] * N
+    wedge_mask = [bool(x) for x in wedge_mask]
+    p["wedge_mask"] = wedge_mask
+    for k in range(N):
+        if not wedge_mask[k]:
+            design[:, k] = 0
     n_states = min(DEMO_STATES if p["mode"] == "demo" else L, L)
     masks = wedge_masks(W, N)
     env = fade_envelope(frames_per_state, fade)
@@ -564,6 +575,7 @@ def generate_movie(params: dict, progress_cb=None, cancel_cb=None) -> dict:
         "sf_band": [sf_lo, sf_hi], "sf_shape": sf_shape,
         "tf_band": [tf_lo, tf_hi], "tf_shape": tf_shape,
         "n_orientations": K, "orient_angles": angles,
+        "wedge_mask": wedge_mask,
         "design": design.tolist(), "orient_design": orient_index.tolist(),
         "params": p,
     }

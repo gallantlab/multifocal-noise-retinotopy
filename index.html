@@ -23,6 +23,12 @@
   .fld input, .fld select { width:96px; background:#16181c; color:var(--ink); border:1px solid var(--line);
         border-radius:5px; padding:4px 6px; font-size:12px; }
   .fld.section { color:var(--ink); font-weight:600; text-transform:uppercase; letter-spacing:.05em; font-size:10px; margin-top:6px; border-top:1px solid var(--line); padding-top:9px; }
+  .wedges .wlabel { display:flex; justify-content:space-between; align-items:center; font-size:12px; color:var(--muted); margin-bottom:6px; }
+  .wedges .wpresets a { color:var(--cursor); cursor:pointer; font-size:10px; margin-left:8px; }
+  .wchips { display:flex; flex-wrap:wrap; gap:5px; }
+  .wchip { width:26px; height:26px; border-radius:5px; border:1px solid var(--line); background:var(--accent); color:#fff;
+           font-size:11px; font-weight:600; cursor:pointer; display:flex; align-items:center; justify-content:center; user-select:none; }
+  .wchip.off { background:#16181c; color:var(--muted); }
   #genBtn { margin-top:14px; width:100%; background:var(--accent); color:#fff; border:0; border-radius:6px;
         padding:10px; font-size:13px; font-weight:700; cursor:pointer; }
   #genBtn:hover { filter:brightness(1.08); }
@@ -132,6 +138,7 @@ const PRELOAD_CAP = 900;          // cap on frames preloaded into the player
 const FIELDS = [
   {k:"width",        label:"movie width (pix)",            type:"num"},
   {k:"n_wedges",     label:"# wedges",                     type:"num"},
+  {k:"wedge_mask",   label:"wedges shown",                 type:"wedges"},
   {k:"wedge_sec",    label:"wedge duration (sec)",         type:"num", step:"0.1"},
   {k:"fps",          label:"frame rate (hz)",              type:"num"},
   {k:"color",        label:"color / BW",                   type:"sel", opts:["color","bw"]},
@@ -158,10 +165,20 @@ const DEFAULTS = {width:512,n_wedges:8,wedge_sec:4.1,fps:30,color:"color",
 // ---- build the form ----
 const form = document.getElementById('form');
 const inputs = {};
+let wedgeChips = null, wedgeState = [];     // per-wedge "shown" toggles
 for (const f of FIELDS) {
   if (f.type === "section") {
     const d = document.createElement('div'); d.className = 'fld section'; d.textContent = f.label;
     form.appendChild(d); continue;
+  }
+  if (f.type === "wedges") {                // a row of toggle chips + all/none/alt presets
+    const wrap = document.createElement('div'); wrap.className = 'fld wedges';
+    wrap.innerHTML = `<div class="wlabel"><span>${f.label}</span><span class="wpresets">` +
+      `<a data-p="all">all</a><a data-p="none">none</a><a data-p="alt">alt</a></span></div><div class="wchips"></div>`;
+    form.appendChild(wrap);
+    wedgeChips = wrap.querySelector('.wchips');
+    wrap.querySelectorAll('.wpresets a').forEach(a => a.onclick = () => applyWedgePreset(a.dataset.p));
+    continue;
   }
   const row = document.createElement('label'); row.className = 'fld';
   const name = document.createElement('span'); name.textContent = f.label; row.appendChild(name);
@@ -174,13 +191,39 @@ for (const f of FIELDS) {
   }
   row.appendChild(el); form.appendChild(row); inputs[f.k] = el;
 }
-function setForm(vals) { for (const k in inputs) if (k in vals) inputs[k].value = vals[k]; }
+// rebuilding the wedge toggles to all-on when # wedges changes
+inputs.n_wedges.addEventListener('change', () => buildWedgeToggles(wedgeCount(), null));
+
+function wedgeCount() { return Math.max(1, parseInt(inputs.n_wedges.value) || 0); }
+function buildWedgeToggles(N, mask) {
+  wedgeState = (Array.isArray(mask) && mask.length === N) ? mask.map(Boolean) : Array(N).fill(true);
+  wedgeChips.innerHTML = '';
+  for (let k = 0; k < N; k++) {
+    const c = document.createElement('div');
+    c.className = 'wchip' + (wedgeState[k] ? '' : ' off'); c.textContent = k + 1;
+    c.onclick = () => { wedgeState[k] = !wedgeState[k]; c.classList.toggle('off', !wedgeState[k]); };
+    wedgeChips.appendChild(c);
+  }
+}
+function applyWedgePreset(kind) {
+  const N = wedgeState.length;
+  const mask = kind === 'all'  ? Array(N).fill(true)
+             : kind === 'none' ? Array(N).fill(false)
+             : Array.from({length: N}, (_, k) => k % 2 === 0);   // alt: 1,3,5,…
+  buildWedgeToggles(N, mask);
+}
+function setForm(vals) {
+  for (const k in inputs) if (k in vals) inputs[k].value = vals[k];
+  buildWedgeToggles(wedgeCount(), vals.wedge_mask);     // toggles follow # wedges / saved mask
+}
 function getForm() {
   const p = {};
   for (const k in inputs) {
     const el = inputs[k];
     p[k] = el.tagName === 'SELECT' ? el.value : parseFloat(el.value);
   }
+  if (wedgeState.length !== wedgeCount()) buildWedgeToggles(wedgeCount(), null);
+  p.wedge_mask = wedgeState.slice();
   return p;
 }
 

@@ -153,15 +153,16 @@ const FIELDS = [
   {k:"sf_hi",        label:"highest SF (cyc/width)",       type:"num"},
   {k:"_tex",         label:"noise texture",                type:"section"},
   {k:"n_orientations",label:"# orientations",              type:"num"},
-  {k:"background",   label:"background",                   type:"sel", opts:["gray","random"]},
+  {k:"background",   label:"background",                   type:"sel", opts:["gray","random","oriented"]},
   {k:"_out",         label:"output",                       type:"section"},
   {k:"fade_frames",  label:"fade between states (frames)", type:"num"},
   {k:"pad_sec",      label:"padding before/after (sec)",   type:"num", step:"0.5"},
+  {k:"fixation",     label:"fixation spot",                type:"sel", opts:["off","on"]},
   {k:"mode",         label:"demo / full",                  type:"sel", opts:["demo","full"]},
 ];
-const DEFAULTS = {width:512,n_wedges:8,wedge_rotation:0,wedge_sec:4.1,fps:30,color:"color",
+const DEFAULTS = {width:512,n_wedges:8,wedge_rotation:22.5,wedge_sec:4.1,fps:30,color:"color",
   tf_shape:"1/f",tf_lo:0.5,tf_hi:15,sf_shape:"1/f",sf_lo:2,sf_hi:128,
-  n_orientations:2,background:"gray",fade_frames:10,pad_sec:2,mode:"demo"};
+  n_orientations:2,background:"gray",fade_frames:5,pad_sec:2,fixation:"off",mode:"demo"};
 
 // ---- build the form ----
 const form = document.getElementById('form');

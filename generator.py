@@ -52,15 +52,19 @@ WEDGE_HALFWIDTH = 4.0          # angular half-width (deg) of off-axis orientatio
 
 #: Default parameters (mirror INTERFACE.txt). ``generate_movie`` fills missing keys.
 DEFAULTS = {
-    "width": 512, "n_wedges": 8, "wedge_rotation": 0.0, "wedge_sec": 4.1, "fps": 30,
+    "width": 512, "n_wedges": 8, "wedge_rotation": 22.5, "wedge_sec": 4.1, "fps": 30,
     "color": "color",                                    # color | bw
     "tf_shape": "1/f", "tf_lo": 0.5, "tf_hi": 15.0,      # 1/f | flat
     "sf_shape": "1/f", "sf_lo": 2.0, "sf_hi": 128.0,
     "n_orientations": 2,
     "background": "gray",                                # gray | random
-    "fade_frames": 10, "pad_sec": 2.0,
+    "fade_frames": 5, "pad_sec": 2.0,
+    "fixation": "off",                                   # off | on (central 2x2 spot)
     "mode": "demo",                                      # demo | full
 }
+
+FIX_BLOCK_SEC = 0.5            # fixation spot re-colors every this many seconds
+FIX_SIZE = 2                   # fixation spot side length (pixels)
 
 
 class Cancelled(Exception):
@@ -139,6 +143,31 @@ def build_design(n_wedges: int, n_orientations: int):
                              for s in range(L)], dtype=int)
     angles = [i * 180.0 / n_orientations for i in range(n_orientations)]
     return design, orient_index, angles, L
+
+
+def orthogonal_orientation(present_deg: list[float]) -> float:
+    """Orientation (deg, in [0, 180)) maximally orthogonal to all given orientations.
+
+    Orientation is periodic mod 180, so the maximally-orthogonal angle is the
+    midpoint of the largest empty arc among ``present_deg`` on that circle -- the
+    angle whose *minimum* angular distance to every present orientation is as
+    large as possible. With one orientation this is exactly perpendicular
+    (``theta + 90``); with several it is the best compromise (e.g. 45 deg when
+    both 0 and 90 are present). Empty input returns 0.
+    """
+    pts = sorted({a % 180.0 for a in present_deg})
+    if not pts:
+        return 0.0
+    if len(pts) == 1:
+        return (pts[0] + 90.0) % 180.0
+    best_mid, best_gap = 0.0, -1.0
+    for i in range(len(pts)):
+        lo = pts[i]
+        hi = pts[i + 1] if i + 1 < len(pts) else pts[0] + 180.0   # wrap mod 180
+        gap = hi - lo
+        if gap > best_gap:
+            best_gap, best_mid = gap, (lo + gap / 2.0) % 180.0
+    return best_mid
 
 
 # ============================================================ Fourier filters
@@ -487,6 +516,12 @@ def generate_movie(params: dict, progress_cb=None, cancel_cb=None) -> dict:
     for k in range(N):
         if not wedge_mask[k]:
             design[:, k] = 0
+    # Background orientation for EVERY state (not just rendered ones), so the full
+    # design is recorded. Deterministic from the design; only used when
+    # background == "oriented" (the orthogonal-to-wedges angle, per state).
+    bg_orient = [orthogonal_orientation([angles[orient_index[s, k]]
+                                         for k in range(N) if design[s, k]])
+                 for s in range(L)] if bg_mode == "oriented" else []
     n_states = min(DEMO_STATES if p["mode"] == "demo" else L, L)
     masks = wedge_masks(W, N, float(p["wedge_rotation"]))
     env = fade_envelope(frames_per_state, fade)
@@ -510,11 +545,25 @@ def generate_movie(params: dict, progress_cb=None, cancel_cb=None) -> dict:
     total = 2 * pad + n_states * frames_per_state
     saved = [0]
 
+    # central fixation spot: a FIX_SIZE x FIX_SIZE square recolored at random every
+    # FIX_BLOCK_SEC; the colour sequence is seeded (reproducible) and recorded.
+    fixation = p["fixation"] == "on"
+    fix_block = max(1, round(FIX_BLOCK_SEC * fps))
+    fix_colors = None
+    if fixation:
+        n_blocks = (total + fix_block - 1) // fix_block
+        fix_colors = np.random.default_rng(BASE_SEED + 4242).integers(
+            0, 256, (n_blocks, 3), dtype=np.uint8)
+
     def emit(frame: np.ndarray) -> None:
         check_cancel()
         u8 = frame if frame.dtype == np.uint8 else np.clip(frame, 0, 255).astype(np.uint8)
-        Image.fromarray(np.ascontiguousarray(u8), "RGB").save(
-            os.path.join(FRAME_DIR, f"frame_{saved[0]:05d}.png"))
+        u8 = np.ascontiguousarray(u8)                      # own copy before overlay
+        if fixation:
+            c = W // 2
+            u8[c - FIX_SIZE // 2:c + (FIX_SIZE + 1) // 2,
+               c - FIX_SIZE // 2:c + (FIX_SIZE + 1) // 2, :] = fix_colors[saved[0] // fix_block]
+        Image.fromarray(u8, "RGB").save(os.path.join(FRAME_DIR, f"frame_{saved[0]:05d}.png"))
         saved[0] += 1
         if progress_cb and saved[0] % 5 == 0:
             progress_cb(saved[0], total)
@@ -537,6 +586,10 @@ def generate_movie(params: dict, progress_cb=None, cancel_cb=None) -> dict:
         background = None
         if bg_mode == "random":
             background, _ = make_noise(BASE_SEED + 5000 + s, H_iso_state, W, frames_per_state, color)
+        elif bg_mode == "oriented":
+            # single-orientation background, orthogonal to this state's wedges
+            H_bg = spatial_filter(W, sf_lo, sf_hi, sf_shape, bg_orient[s], halfwidth)[:, :, None] * a_t_state
+            background, _ = make_noise(BASE_SEED + 5000 + s, H_bg, W, frames_per_state, color)
         carriers = {}
         for k in on:
             check_cancel()
@@ -575,7 +628,10 @@ def generate_movie(params: dict, progress_cb=None, cancel_cb=None) -> dict:
         "frames_per_state": frames_per_state, "generated_states": n_states, "total_states": L,
         "pad_frames": pad, "movie_start": movie_start, "movie_end": movie_end,
         "total_frames": saved[0], "fade_frames": min(fade, frames_per_state // 2),
-        "color": color, "background": bg_mode,
+        "color": color, "background": bg_mode, "bg_orient": bg_orient,
+        "fixation": p["fixation"],
+        "fixation_block_frames": fix_block if fixation else 0,
+        "fixation_colors": fix_colors.tolist() if fixation else [],
         "sf_band": [sf_lo, sf_hi], "sf_shape": sf_shape,
         "tf_band": [tf_lo, tf_hi], "tf_shape": tf_shape,
         "n_orientations": K, "orient_angles": angles,

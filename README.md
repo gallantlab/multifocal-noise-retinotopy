@@ -72,7 +72,7 @@ From `INTERFACE.txt` (defaults shown). All are exposed in the UI.
 | movie width | pixels | 512 | Frame is `width × width`. |
 | # wedges | – | 8 | Equal angular wedges of the disc. |
 | wedges shown | – | all on | Per-wedge include/exclude toggles (with all/none/alternate presets). Excluded wedges are always off; the geometry and m-sequence are unchanged. |
-| wedge rotation | degrees | 0 | Offsets all wedge boundaries counter-clockwise (e.g. `360/(2·N)` = 22.5° for 8 wedges puts the divisions halfway between the defaults). Geometry only. |
+| wedge rotation | degrees | 22.5 | Offsets all wedge boundaries counter-clockwise (`360/(2·N)` = 22.5° for 8 wedges puts the divisions halfway between the cardinal axes). Geometry only. |
 | wedge duration | sec | 4.1 | Length of each state → `frames_per_state = round(fps·dur)`. |
 | frame rate | Hz | 30 | Render/display rate. |
 | color / BW | – | color | `color` = 3 independent RGB channels; `bw` = grayscale. |
@@ -81,12 +81,109 @@ From `INTERFACE.txt` (defaults shown). All are exposed in the UI.
 | SF shape | 1/f \| flat | 1/f | Spatial amplitude spectrum. |
 | lowest / highest SF | cyc/width | 2 / 128 | Spatial passband (cycles per movie width). |
 | # orientations | – | 2 | Equally spaced image orientations `i·180/K`. |
-| background | gray \| random | gray | `random` = full-frame isotropic 1/f noise behind the wedges. |
-| fade frames | frames | 10 | Per-state fade in/out. |
+| background | gray \| random \| oriented | gray | `random` = isotropic noise behind the wedges; `oriented` = single-orientation noise whose angle is, each state, as orthogonal as possible to that state's wedge orientations. |
+| fade frames | frames | 5 | Per-state fade in/out. |
 | padding | sec | 2 | Full-screen isotropic noise before & after the movie. |
+| fixation spot | off \| on | off | A 2×2-px square at the display center that switches to a random color every 0.5 s (baked into every frame; color sequence recorded in metadata). |
 | demo / full | – | demo | `demo` = first 5 states, `full` = all 63. |
 
 "1/f" means **amplitude ∝ 1/f** (power ∝ 1/f²).
+
+---
+
+## UI reference (every control)
+
+### Parameters panel
+
+- **movie width (pix)** — side length of the square frame (`width × width`). Sets
+  the spatial resolution and the spatial Nyquist (`width/2` cyc/width). Larger
+  widths mean sharper noise but slower generation and larger files. Default 512.
+
+- **\# wedges** — number of equal angular sectors the disc is divided into. Each
+  wedge becomes one on/off regressor (with m-sequence shift `round(k·63/N)`).
+  Changing this rebuilds the "wedges shown" toggles (all on). Default 8.
+
+- **wedges shown** — one toggle chip per wedge (red = shown, dark = hidden), with
+  **all / none / alt** preset links (`alt` = every other wedge). Hidden wedges are
+  forced always-off and never display noise; the disc geometry and m-sequence are
+  unchanged. Use this to present, say, only every other wedge.
+
+- **wedge rotation (deg)** — rotates all wedge boundaries counter-clockwise by this
+  many degrees. Purely geometric — it moves where the divisions fall without
+  touching the m-sequence, noise, or orientations. e.g. `22.5` (= 360/(2·8)) puts
+  the divisions halfway between the cardinal axes. Default 22.5.
+
+- **wedge duration (sec)** — how long each of the 63 states is shown. Sets
+  `frames_per_state = round(fps · duration)` and the **lowest temporal frequency**
+  the noise can contain within a state (`1/duration`, ≈ 0.24 Hz at 4.1 s). Default 4.1.
+
+- **frame rate (hz)** — render/display rate. Caps the temporal band at the Nyquist
+  `fps/2` (15 Hz at 30 Hz). Default 30.
+
+- **color / BW** — `color` draws three independent noise fields (one per RGB
+  channel) through the same filter, so each Fourier component gets a random colour;
+  `bw` uses one grayscale field. Default color.
+
+- **temporal frequency → shape** — `1/f` (amplitude ∝ 1/f) or `flat` (equal
+  amplitude in band) temporal spectrum. Default 1/f.
+- **lowest / highest TF (hz)** — temporal passband edges. Keep `highest ≤ fps/2`
+  (no aliasing) and `lowest ≥ 1/wedge_sec` (representable in a state). Defaults 0.5 / 15.
+
+- **spatial frequency → shape** — `1/f` or `flat` spatial (radial) spectrum. Default 1/f.
+- **lowest / highest SF (cyc/width)** — spatial passband in cycles per movie width.
+  Keep within `[~1, width/2]`. Defaults 2 / 128.
+
+- **\# orientations** — number `K` of equally spaced image orientations (`i·180/K`)
+  the wedge/background textures can take. `K=2` → {0°, 90°}; `K=4` → add 45°/135°.
+  Each on-wedge's orientation is chosen by the orientation m-sequence. **Note:** 0°
+  and 90° are exact infinitely-narrow orientation bands; other angles use a thin
+  Fourier wedge (see caveats). Default 2.
+
+- **background** — what fills the disc behind/around the wedges:
+  - `gray` — flat mid-gray.
+  - `random` — full-frame **isotropic** 1/f noise (all orientations).
+  - `oriented` — full-frame **single-orientation** 1/f noise whose angle is chosen,
+    *each state*, to be as orthogonal as possible to that state's on-wedge
+    orientations (the midpoint of the largest empty arc on the orientation circle;
+    exactly perpendicular when the wedges share one orientation, 45° when both 0°
+    and 90° are present). The angle changes from state to state and is recorded for
+    all 63 states in `bg_orient` (see Outputs). Default gray.
+
+- **fade between states (frames)** — length of the per-state contrast ramp. Each
+  state fades its wedges in from / out to the background over this many frames (so a
+  gray background returns to gray between states; an oriented background stays).
+  Default 5.
+
+- **padding before/after (sec)** — seconds of full-screen **isotropic** 1/f noise
+  prepended and appended to the movie (e.g. for fMRI run lead-in/out). Default 2.
+
+- **fixation spot** — `on` overlays a **2×2-pixel square at the exact center** of
+  every frame (padding included) that switches to a new **random color every
+  0.5 s**. Drawn on top at full contrast as a fixation target; the seeded
+  per-block color sequence is saved to `fixation_colors` in the metadata. Default off.
+
+- **demo / full** — `demo` renders only the first 5 states (quick iteration);
+  `full` renders all 63. Default demo.
+
+### Buttons
+
+- **Generate movie** — POSTs the current parameters to the server, which renders in
+  the background; the progress bar tracks frames and the viewer reloads when done.
+- **Cancel** — appears while generating; aborts the run within ~one wedge's compute.
+  A cancelled run leaves `frames/` partial (just regenerate).
+
+### Viewer
+
+- **Movie** — canvas player (Pause/Play), looping the rendered frames at the true
+  frame rate. The pill shows `states / preview / pad`; the readout shows the current
+  frame, time, state (or "padding"), and the on-wedges with their orientations.
+- **On/off m-sequence** — the design matrix (states top→bottom × wedges W1…WN; red =
+  on). A cyan cursor and a time axis track playback; active wedge columns highlight.
+- **Orientation m-sequence** — orientation index per state×wedge, one hue per
+  orientation (legend lists the angles), off-wedges dimmed.
+- **Noise spectra** — measured orientation, spatial (radial + 2-D), and temporal
+  spectra of the generated noise vs. the ideal, for verification. Sampled from
+  state 0, so they show the orientations present in that state.
 
 ---
 
@@ -172,10 +269,14 @@ appear empty in the on/off matrix and dimmed in the orientation matrix.
 Fourier component carries an independent random RGB (randomly multicolored) while
 each channel keeps the exact target spectrum. `bw` uses a single grayscale field.
 
-### 9. Background and padding noise are isotropic
+### 9. Background and padding noise
 `random` background and the start/end padding are **isotropic** 1/f noise (all
 orientations present), i.e. the same parameters but **without** orientation
-filtering.
+filtering. The `oriented` background is single-orientation noise whose angle is
+chosen *per state* to be maximally orthogonal to that state's wedge orientations;
+when a state mixes orientations the background takes the best-compromise angle
+(e.g. 45° for {0°, 90°}), which may itself be off-axis (a thin Fourier wedge). The
+per-state background orientations are saved in `bg_orient` for the full design.
 
 ### 10. Fades are to background, not crossfades
 Each state fades its contrast in from / out to the background over `fade frames`.
@@ -207,7 +308,7 @@ gain in `generator.py` (`GAIN`) if clipping matters for your stimulus.
 | File | Contents |
 |------|----------|
 | `frames/frame_NNNNN.png` | The movie, one PNG per frame (`width × width`, RGB). |
-| `movie_meta.json` / `movie_meta.js` | Full design + parameters: `design` (states × wedges on/off), `orient_design` (states × wedges orientation index), `orient_angles`, timing, bands, etc. |
+| `movie_meta.json` / `movie_meta.js` | The **complete design + parameters**, enough to reconstruct the stimulus: `design` (states × wedges on/off), `orient_design` (orientation index per state × wedge), `orient_angles`, `wedge_mask`, `wedge_rotation`, `bg_orient` (background orientation for **every** state in oriented mode), `fixation_colors` (the per-0.5 s spot colors) + `fixation_block_frames`, timing, bands, and the echoed `params`. All design arrays cover all 63 states even in demo mode. |
 | `design_matrix.png` | On/off m-sequence (states × wedges). |
 | `orientation_matrix.png` | Orientation m-sequence (states × wedges; one color per orientation, faded where off). |
 | `temporal_spectrum.png`, `spatial_spectrum.png`, `orientation_spectrum.png` | Measured spectra of the generated noise vs. the ideal, for verification. The spectra are sampled from state 0, so they show the orientations present in that state. |

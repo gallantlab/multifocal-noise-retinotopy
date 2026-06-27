@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Retinotopy movie maker</title>
+<style>
+  :root { --bg:#1a1c20; --panel:#24272d; --ink:#e8eaed; --muted:#9aa0a8;
+          --accent:#e02828; --line:#3a3e45; --cursor:#2bd1ff; --ok:#37b24d; }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:24px; background:var(--bg); color:var(--ink);
+         font:14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+  h1 { font-size:20px; margin:0 0 4px; font-weight:600; }
+  .sub { color:var(--muted); margin:0 0 20px; font-size:13px; }
+  .layout { display:flex; gap:24px; align-items:flex-start; flex-wrap:wrap; }
+  .panel { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:16px; }
+  .panel h2 { font-size:12px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); margin:0 0 12px; font-weight:600; }
+
+  /* parameters form */
+  .params { width:300px; }
+  .params .grid { display:grid; grid-template-columns:1fr; gap:9px; }
+  .fld { display:grid; grid-template-columns:1fr auto; align-items:center; gap:8px; font-size:12px; color:var(--muted); }
+  .fld input, .fld select { width:96px; background:#16181c; color:var(--ink); border:1px solid var(--line);
+        border-radius:5px; padding:4px 6px; font-size:12px; }
+  .fld.section { color:var(--ink); font-weight:600; text-transform:uppercase; letter-spacing:.05em; font-size:10px; margin-top:6px; border-top:1px solid var(--line); padding-top:9px; }
+  #genBtn { margin-top:14px; width:100%; background:var(--accent); color:#fff; border:0; border-radius:6px;
+        padding:10px; font-size:13px; font-weight:700; cursor:pointer; }
+  #genBtn:hover { filter:brightness(1.08); }
+  #genBtn:disabled { opacity:.5; cursor:default; }
+  #cancelBtn { margin-top:8px; width:100%; background:#3a3e45; color:var(--ink); border:0; border-radius:6px;
+        padding:8px; font-size:12px; font-weight:600; cursor:pointer; display:none; }
+  #cancelBtn:hover { filter:brightness(1.18); }
+  #cancelBtn:disabled { opacity:.5; cursor:default; }
+  .prog { margin-top:10px; height:8px; background:#16181c; border-radius:4px; overflow:hidden; display:none; }
+  .prog > div { height:100%; width:0%; background:var(--cursor); transition:width .2s; }
+  #status { margin-top:8px; font-size:11px; color:var(--muted); min-height:14px; }
+  #status.err { color:var(--accent); }
+
+  #stage { width:384px; height:384px; background:#808080; border-radius:6px; display:block; image-rendering:pixelated; }
+  .controls { display:flex; align-items:center; gap:12px; margin-top:12px; }
+  button.play { background:var(--accent); color:#fff; border:0; border-radius:6px; padding:8px 16px; font-size:13px; font-weight:600; cursor:pointer; }
+  .readout { color:var(--muted); font-variant-numeric:tabular-nums; font-size:12px; }
+  .readout b { color:var(--ink); }
+  .pill { display:inline-block; background:#000; color:var(--cursor); padding:1px 7px; border-radius:10px; font-size:11px; font-weight:600; margin-left:8px; }
+
+  .mat-wrap { display:flex; gap:8px; }
+  .mat-time { position:relative; width:42px; font-size:11px; color:var(--muted); font-variant-numeric:tabular-nums; }
+  .mat-time span { position:absolute; right:4px; transform:translateY(-50%); }
+  .mat-cols { display:flex; margin-bottom:4px; }
+  .mat-cols span { text-align:center; font-size:10px; color:var(--muted); flex:1; }
+  .mat-cols span.active { color:var(--accent); font-weight:700; }
+  .mat-box { position:relative; line-height:0; }
+  .mat-box img { display:block; height:440px; width:auto; border:1px solid var(--line); image-rendering:pixelated; }
+  .mat-cursor { position:absolute; left:0; right:0; height:0; border-top:2px solid var(--cursor); box-shadow:0 0 6px var(--cursor); pointer-events:none; }
+  .legend { display:flex; gap:12px; margin-top:10px; font-size:11px; color:var(--muted); flex-wrap:wrap; align-items:center; }
+  .sw { display:inline-block; width:12px; height:12px; border-radius:3px; vertical-align:-1px; margin-right:5px; }
+
+  .spectra img { display:block; border:1px solid var(--line); border-radius:6px; margin-bottom:10px; max-width:460px; width:100%; }
+</style>
+</head>
+<body>
+  <h1>Retinotopy movie maker</h1>
+  <p class="sub" id="sub">loading&hellip;</p>
+
+  <div class="layout">
+    <!-- PARAMETERS -->
+    <div class="panel params">
+      <h2>Parameters</h2>
+      <div class="grid" id="form"></div>
+      <button id="genBtn">Generate movie</button>
+      <button id="cancelBtn">Cancel</button>
+      <div class="prog" id="prog"><div></div></div>
+      <div id="status"></div>
+    </div>
+
+    <!-- MOVIE -->
+    <div class="panel">
+      <h2>Movie <span class="pill" id="previewPill"></span></h2>
+      <canvas id="stage" width="512" height="512"></canvas>
+      <div class="controls">
+        <button class="play" id="playBtn">Pause</button>
+        <span class="readout">
+          frame <b id="rFrame">0</b>/<b id="rTotal">?</b> &middot; <b id="rTime">0.0</b>s &middot;
+          <b id="rState">&mdash;</b>
+        </span>
+      </div>
+      <div class="readout" style="margin-top:6px">on: <b id="rWedges" style="color:var(--accent)">&mdash;</b></div>
+    </div>
+
+    <!-- DESIGN MATRIX -->
+    <div class="panel">
+      <h2>On/off m-sequence</h2>
+      <div class="mat-wrap">
+        <div class="mat-time" id="dmTime"></div>
+        <div>
+          <div class="mat-cols" id="dmCols"></div>
+          <div class="mat-box"><img id="dmImg" alt="design matrix"><div class="mat-cursor" id="dmCursor"></div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ORIENTATION MATRIX -->
+    <div class="panel">
+      <h2>Orientation m-sequence</h2>
+      <div class="mat-box"><img id="omImg" alt="orientation matrix"><div class="mat-cursor" id="omCursor"></div></div>
+      <div class="legend" id="omLegend"></div>
+    </div>
+
+    <!-- SPECTRA -->
+    <div class="panel spectra">
+      <h2>Noise spectra</h2>
+      <img id="specOrient" alt="orientation spectrum">
+      <img id="specSpatial" alt="spatial spectrum">
+      <img id="specTemporal" alt="temporal spectrum">
+    </div>
+  </div>
+
+<script>
+/*
+ * Viewer + parameter UI.  Data flow:
+ *   1. Build the parameter form from FIELDS (defaults from DEFAULTS / INTERFACE.txt).
+ *   2. On load, fetch movie_meta.json and buildViewer() to show the current movie.
+ *   3. Generate: POST the form params to /generate, poll /status, and on "done"
+ *      re-fetch movie_meta.json and rebuild the viewer (Cancel posts /cancel).
+ *   4. A single requestAnimationFrame loop() reads global state G and draws the
+ *      current frame, syncing the design/orientation matrix cursors and readout.
+ * Frame layout per movie: [pad] [state 0 ... state n] [pad]; movie_meta describes
+ * the frame->state mapping (pad_frames, frames_per_state, generated_states).
+ * Requires the page be served by server.py (fetch/generate need the backend).
+ */
+const PRELOAD_CAP = 900;          // cap on frames preloaded into the player
+const FIELDS = [
+  {k:"width",        label:"movie width (pix)",            type:"num"},
+  {k:"n_wedges",     label:"# wedges",                     type:"num"},
+  {k:"wedge_sec",    label:"wedge duration (sec)",         type:"num", step:"0.1"},
+  {k:"fps",          label:"frame rate (hz)",              type:"num"},
+  {k:"color",        label:"color / BW",                   type:"sel", opts:["color","bw"]},
+  {k:"_tf",          label:"temporal frequency",           type:"section"},
+  {k:"tf_shape",     label:"shape",                        type:"sel", opts:["1/f","flat"]},
+  {k:"tf_lo",        label:"lowest TF (hz)",               type:"num", step:"0.1"},
+  {k:"tf_hi",        label:"highest TF (hz)",              type:"num", step:"0.1"},
+  {k:"_sf",          label:"spatial frequency",            type:"section"},
+  {k:"sf_shape",     label:"shape",                        type:"sel", opts:["1/f","flat"]},
+  {k:"sf_lo",        label:"lowest SF (cyc/width)",        type:"num"},
+  {k:"sf_hi",        label:"highest SF (cyc/width)",       type:"num"},
+  {k:"_tex",         label:"noise texture",                type:"section"},
+  {k:"n_orientations",label:"# orientations",              type:"num"},
+  {k:"background",   label:"background",                   type:"sel", opts:["gray","random"]},
+  {k:"_out",         label:"output",                       type:"section"},
+  {k:"fade_frames",  label:"fade between states (frames)", type:"num"},
+  {k:"pad_sec",      label:"padding before/after (sec)",   type:"num", step:"0.5"},
+  {k:"mode",         label:"demo / full",                  type:"sel", opts:["demo","full"]},
+];
+const DEFAULTS = {width:512,n_wedges:8,wedge_sec:4.1,fps:30,color:"color",
+  tf_shape:"1/f",tf_lo:0.5,tf_hi:15,sf_shape:"1/f",sf_lo:2,sf_hi:128,
+  n_orientations:2,background:"gray",fade_frames:10,pad_sec:2,mode:"demo"};
+
+// ---- build the form ----
+const form = document.getElementById('form');
+const inputs = {};
+for (const f of FIELDS) {
+  if (f.type === "section") {
+    const d = document.createElement('div'); d.className = 'fld section'; d.textContent = f.label;
+    form.appendChild(d); continue;
+  }
+  const row = document.createElement('label'); row.className = 'fld';
+  const name = document.createElement('span'); name.textContent = f.label; row.appendChild(name);
+  let el;
+  if (f.type === "sel") {
+    el = document.createElement('select');
+    for (const o of f.opts) { const op = document.createElement('option'); op.value = o; op.textContent = o; el.appendChild(op); }
+  } else {
+    el = document.createElement('input'); el.type = 'number'; if (f.step) el.step = f.step;
+  }
+  row.appendChild(el); form.appendChild(row); inputs[f.k] = el;
+}
+function setForm(vals) { for (const k in inputs) if (k in vals) inputs[k].value = vals[k]; }
+function getForm() {
+  const p = {};
+  for (const k in inputs) {
+    const el = inputs[k];
+    p[k] = el.tagName === 'SELECT' ? el.value : parseFloat(el.value);
+  }
+  return p;
+}
+
+// ---- viewer state ----
+const G = { meta:null, frames:[], total:0, preview:0, cur:0, playing:true, startT:null, activeState:-2, ver:0 };
+const $ = id => document.getElementById(id);
+const canvas = $('stage'), ctx = canvas.getContext('2d');
+
+function vh(angle, K) {           // label an orientation
+  if (K === 2) return (Math.round(angle) === 90) ? 'V' : 'H';
+  return Math.round(angle) + '°';
+}
+
+function buildViewer(meta) {
+  G.meta = meta; G.ver++;
+  const W = meta.width, N = meta.n_wedges, FPS = meta.fps, FPSTATE = meta.frames_per_state;
+  const L = meta.total_states, PAD = meta.pad_frames, K = meta.n_orientations;
+  canvas.width = canvas.height = W;
+  G.total = meta.total_frames;
+  G.preview = Math.min(meta.total_frames, PRELOAD_CAP);
+  G.movieEnd = PAD + meta.generated_states * FPSTATE;
+  $('rTotal').textContent = meta.total_frames;
+  const truncated = meta.total_frames > G.preview;
+  $('previewPill').textContent = `${meta.generated_states}/${L} states` +
+      (truncated ? ` · preview ${G.preview}f` : '') + (meta.pad_frames ? ` · ${meta.pad_frames/FPS}s pad` : '');
+  const angTxt = meta.orient_angles.map(a => Math.round(a)+'°').join('/');
+  $('sub').innerHTML = `${W}×${W} · ${FPS} Hz · ${N} wedges · ${meta.wedge_sec}s/state · ` +
+     `${meta.color} · ${meta.n_orientations} orient (${angTxt}) · ${meta.background} bg · ` +
+     `SF ${meta.sf_shape} ${meta.sf_band[0]}–${meta.sf_band[1]} cyc/w · TF ${meta.tf_shape} ${meta.tf_band[0]}–${meta.tf_band[1]} Hz`;
+
+  // design-matrix column headers
+  const dmCols = $('dmCols'); dmCols.innerHTML = '';
+  for (let k=0;k<N;k++){ const s=document.createElement('span'); s.textContent='W'+(k+1); dmCols.appendChild(s); }
+  G.colEls = [...dmCols.children];
+
+  // matrix images (cache-bust)
+  const v = '?v=' + G.ver;
+  $('dmImg').src = 'design_matrix.png' + v;
+  $('omImg').src = 'orientation_matrix.png' + v;
+  $('specOrient').src = 'orientation_spectrum.png' + v;
+  $('specSpatial').src = 'spatial_spectrum.png' + v;
+  $('specTemporal').src = 'temporal_spectrum.png' + v;
+
+  // time axis on design matrix
+  const dmImg = $('dmImg'), dmTime = $('dmTime');
+  const totalSec = L * FPSTATE / FPS;
+  const layoutTime = () => {
+    dmTime.style.height = (dmImg.clientHeight||440) + 'px'; dmTime.innerHTML='';
+    const step = totalSec > 120 ? 30 : (totalSec > 40 ? 15 : 5);
+    for (let t=0;t<=totalSec;t+=step){ const s=document.createElement('span'); s.textContent=t+'s';
+      s.style.top=(t/totalSec*100)+'%'; dmTime.appendChild(s); }
+  };
+  dmImg.complete ? layoutTime() : dmImg.addEventListener('load', layoutTime, {once:true});
+
+  // orientation legend
+  const leg = $('omLegend'); leg.innerHTML='';
+  for (let i=0;i<K;i++){
+    const hue = i/Math.max(K,1);
+    const [r,g,b] = hsv(hue);
+    const sp=document.createElement('span');
+    sp.innerHTML = `<span class="sw" style="background:rgb(${r},${g},${b})"></span>${Math.round(meta.orient_angles[i])}°`;
+    leg.appendChild(sp);
+  }
+  const dim=document.createElement('span'); dim.textContent='faded = wedge off'; leg.appendChild(dim);
+
+  // preload frames
+  G.frames = new Array(G.preview);
+  for (let i=0;i<G.preview;i++){ const im=new Image(); im.src=`frames/frame_${String(i).padStart(5,'0')}.png${v}`; G.frames[i]=im; }
+  G.cur = 0; G.startT = null; G.activeState = -2;
+}
+
+function hsv(h){ // h in [0,1] -> [r,g,b] 0..255 (matplotlib hsv-ish, full S,V)
+  const i=Math.floor(h*6), f=h*6-i, q=1-f;
+  let r,g,b;
+  switch(i%6){case 0:[r,g,b]=[1,f,0];break;case 1:[r,g,b]=[q,1,0];break;case 2:[r,g,b]=[0,1,f];break;
+    case 3:[r,g,b]=[0,q,1];break;case 4:[r,g,b]=[f,0,1];break;default:[r,g,b]=[1,0,q];}
+  return [Math.round(r*255),Math.round(g*255),Math.round(b*255)];
+}
+
+function draw(g){
+  const m=G.meta; if(!m) return;
+  const FPS=m.fps, FPSTATE=m.frames_per_state, PAD=m.pad_frames, N=m.n_wedges, L=m.total_states, K=m.n_orientations;
+  const im=G.frames[g]; if(im&&im.complete&&im.naturalWidth) ctx.drawImage(im,0,0,canvas.width,canvas.height);
+  $('rFrame').textContent=g; $('rTime').textContent=(g/FPS).toFixed(1);
+
+  let region, state=-1, frac;
+  if (g < PAD) { region='padding (start)'; frac=0; }
+  else if (g >= G.movieEnd) { region='padding (end)'; frac=m.generated_states/L; }
+  else { state=Math.floor((g-PAD)/FPSTATE); region='state '+state; frac=(g-PAD)/FPSTATE/L; }
+  $('rState').textContent=region;
+  const top=(frac*100)+'%'; $('dmCursor').style.top=top; $('omCursor').style.top=top;
+
+  if (state!==G.activeState){
+    G.activeState=state;
+    if (state<0){ $('rWedges').textContent=region.includes('padding')?'full-screen noise (no orientation filter)':'—';
+      G.colEls.forEach(e=>e.classList.remove('active')); }
+    else {
+      const on=m.design[state], od=m.orient_design[state], list=[];
+      for(let k=0;k<N;k++){ const isOn=on[k]===1; G.colEls[k].classList.toggle('active',isOn);
+        if(isOn) list.push((k+1)+vh(m.orient_angles[od[k]],K)); }
+      $('rWedges').textContent=list.length?list.join('  '):'blank';
+    }
+  }
+}
+
+function loop(now){
+  const m=G.meta;
+  if (m && G.playing){
+    if (G.startT===null) G.startT = now - G.cur*1000/m.fps;
+    G.cur = Math.floor((now-G.startT)*m.fps/1000) % G.preview;
+  }
+  if (m) draw(G.cur);
+  requestAnimationFrame(loop);
+}
+$('playBtn').onclick = () => { G.playing=!G.playing; $('playBtn').textContent=G.playing?'Pause':'Play'; G.startT=null; };
+
+// ---- generation ----
+const genBtn=$('genBtn'), cancelBtn=$('cancelBtn'), prog=$('prog'), progBar=prog.firstElementChild, status=$('status');
+const SERVED = location.protocol === 'http:' || location.protocol === 'https:';
+let polling=null;
+genBtn.onclick = async () => {
+  if (!SERVED) { fail("this page is open as a file — start the server (python3 server.py) and open http://localhost:8000"); return; }
+  const params=getForm();
+  genBtn.disabled=true; cancelBtn.style.display='block'; cancelBtn.disabled=false;
+  prog.style.display='block'; progBar.style.width='0%';
+  status.className=''; status.textContent='starting…';
+  const warn = params.mode==='full' ? ' (full movie can take many minutes)' : '';
+  try {
+    const r=await fetch('/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(params)});
+    const j=await r.json();
+    if(!r.ok||j.error){ throw new Error(j.error||('HTTP '+r.status)); }
+    status.textContent='generating…'+warn;
+    poll();
+  } catch(e){ fail(e.message); }
+};
+cancelBtn.onclick = async () => {
+  cancelBtn.disabled=true; status.className=''; status.textContent='cancelling…';
+  try { await fetch('/cancel',{method:'POST'}); } catch(e){ /* poll will settle state */ }
+};
+function endUI(){ genBtn.disabled=false; cancelBtn.style.display='none'; setTimeout(()=>{prog.style.display='none';},800); }
+function poll(){
+  clearInterval(polling);
+  polling=setInterval(async ()=>{
+    let j; try{ j=await (await fetch('/status?t='+Date.now())).json(); }catch(e){ return; }
+    if(j.total) progBar.style.width=Math.min(100,100*j.done/j.total)+'%';
+    if(j.state==='running') status.textContent=`generating… ${j.done}/${j.total} frames`;
+    if(j.state==='done'){ clearInterval(polling); status.textContent='done.'; finishGen(); }
+    if(j.state==='cancelled'){ clearInterval(polling); status.textContent='cancelled.'; endUI(); }
+    if(j.state==='error'){ clearInterval(polling); fail(j.error); }
+  },700);
+}
+async function finishGen(){
+  try{
+    const meta=await (await fetch('movie_meta.json?t='+Date.now())).json();
+    buildViewer(meta);           // keep the user's form entries; just show the result
+  }catch(e){ fail('reload failed: '+e.message); }
+  endUI();
+}
+function fail(msg){ status.className='err'; status.textContent='error: '+msg; endUI(); }
+
+// ---- initial load ----
+(async function init(){
+  requestAnimationFrame(loop);
+  if (!SERVED){
+    setForm(DEFAULTS);
+    $('sub').innerHTML="<b style='color:#e02828'>This page is open as a local file.</b> "+
+      "Generation needs the server: run <b>python3 server.py</b> and open <b>http://localhost:8000</b>.";
+    return;
+  }
+  setForm(DEFAULTS);              // form always starts at the INTERFACE.txt defaults
+  try{
+    const meta=await (await fetch('movie_meta.json?t='+Date.now())).json();
+    buildViewer(meta);            // show whatever movie currently exists
+  }catch(e){
+    $('sub').textContent='No movie yet — set parameters and click Generate.';
+  }
+})();
+</script>
+</body>
+</html>

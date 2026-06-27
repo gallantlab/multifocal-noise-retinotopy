@@ -1,0 +1,14 @@
+# Python
+__pycache__/
+*.pyc
+
+# Generated movie frames
+frames/
+
+# Generated plots / matrices / metadata (root only; keeps docs/ images)
+/*.png
+movie_meta.js
+movie_meta.json
+msequence_design.js
+msequence_design.json
+noise_meta.js

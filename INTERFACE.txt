@@ -1,0 +1,19 @@
+movie width (pix): 512
+# wedges: 8
+duration of wedge (sec): 4.1
+frame rate of render (hz): 30
+color OR BW: color
+TF spectrum settings --
+	flat OR 1/f: 1/f
+	lowest TF (hz): 0.5
+	highest TF (hz): 15
+SF spectrum settings --
+	flat OR 1/f: 1/f
+	lowest SF (cyc/width): 2
+	highest SF (cyc/width): 128
+noise texture settings -- 
+	# orientations: 2
+	gray background OR random orientation background: gray
+fade duration between wedge states (frames): 10
+noise padding before and after movie (sec): 2
+generate 5 state demo OR full movie: demo

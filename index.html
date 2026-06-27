@@ -139,6 +139,7 @@ const FIELDS = [
   {k:"width",        label:"movie width (pix)",            type:"num"},
   {k:"n_wedges",     label:"# wedges",                     type:"num"},
   {k:"wedge_mask",   label:"wedges shown",                 type:"wedges"},
+  {k:"wedge_rotation",label:"wedge rotation (deg)",        type:"num", step:"0.5"},
   {k:"wedge_sec",    label:"wedge duration (sec)",         type:"num", step:"0.1"},
   {k:"fps",          label:"frame rate (hz)",              type:"num"},
   {k:"color",        label:"color / BW",                   type:"sel", opts:["color","bw"]},
@@ -158,7 +159,7 @@ const FIELDS = [
   {k:"pad_sec",      label:"padding before/after (sec)",   type:"num", step:"0.5"},
   {k:"mode",         label:"demo / full",                  type:"sel", opts:["demo","full"]},
 ];
-const DEFAULTS = {width:512,n_wedges:8,wedge_sec:4.1,fps:30,color:"color",
+const DEFAULTS = {width:512,n_wedges:8,wedge_rotation:0,wedge_sec:4.1,fps:30,color:"color",
   tf_shape:"1/f",tf_lo:0.5,tf_hi:15,sf_shape:"1/f",sf_lo:2,sf_hi:128,
   n_orientations:2,background:"gray",fade_frames:10,pad_sec:2,mode:"demo"};
 
@@ -250,7 +251,8 @@ function buildViewer(meta) {
   $('previewPill').textContent = `${meta.generated_states}/${L} states` +
       (truncated ? ` · preview ${G.preview}f` : '') + (meta.pad_frames ? ` · ${meta.pad_frames/FPS}s pad` : '');
   const angTxt = meta.orient_angles.map(a => Math.round(a)+'°').join('/');
-  $('sub').innerHTML = `${W}×${W} · ${FPS} Hz · ${N} wedges · ${meta.wedge_sec}s/state · ` +
+  const rotTxt = meta.wedge_rotation ? ` +${meta.wedge_rotation}°` : '';
+  $('sub').innerHTML = `${W}×${W} · ${FPS} Hz · ${N} wedges${rotTxt} · ${meta.wedge_sec}s/state · ` +
      `${meta.color} · ${meta.n_orientations} orient (${angTxt}) · ${meta.background} bg · ` +
      `SF ${meta.sf_shape} ${meta.sf_band[0]}–${meta.sf_band[1]} cyc/w · TF ${meta.tf_shape} ${meta.tf_band[0]}–${meta.tf_band[1]} Hz`;
 

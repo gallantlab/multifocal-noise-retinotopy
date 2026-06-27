@@ -52,7 +52,7 @@ WEDGE_HALFWIDTH = 4.0          # angular half-width (deg) of off-axis orientatio
 
 #: Default parameters (mirror INTERFACE.txt). ``generate_movie`` fills missing keys.
 DEFAULTS = {
-    "width": 512, "n_wedges": 8, "wedge_sec": 4.1, "fps": 30,
+    "width": 512, "n_wedges": 8, "wedge_rotation": 0.0, "wedge_sec": 4.1, "fps": 30,
     "color": "color",                                    # color | bw
     "tf_shape": "1/f", "tf_lo": 0.5, "tf_hi": 15.0,      # 1/f | flat
     "sf_shape": "1/f", "sf_lo": 2.0, "sf_hi": 128.0,
@@ -251,17 +251,19 @@ def make_noise(seed: int, H: np.ndarray, width: int, n_frames: int,
 
 
 # ============================================================ geometry
-def wedge_masks(width: int, n_wedges: int) -> list[np.ndarray]:
+def wedge_masks(width: int, n_wedges: int, rotation: float = 0.0) -> list[np.ndarray]:
     """Boolean pixel mask per wedge: inside the disc and in the wedge's sector.
 
     Angles are measured from 3 o'clock, counter-clockwise; wedge ``k`` spans
-    ``[k, k+1) * 360/n_wedges`` degrees.
+    ``[k, k+1) * 360/n_wedges`` degrees, with all boundaries offset
+    counter-clockwise by ``rotation`` degrees (e.g. ``360/(2·n_wedges)`` puts the
+    divisions halfway between the default ones).
     """
     center = width / 2.0
     coord = np.arange(width) + 0.5
     gx, gy = np.meshgrid(coord - center, coord - center)
     disc = np.hypot(gx, gy) <= width / 2.0
-    angle = np.degrees(np.arctan2(-gy, gx)) % 360.0
+    angle = (np.degrees(np.arctan2(-gy, gx)) - rotation) % 360.0
     step = 360.0 / n_wedges
     return [disc & (angle >= k * step) & (angle < (k + 1) * step) for k in range(n_wedges)]
 
@@ -486,7 +488,7 @@ def generate_movie(params: dict, progress_cb=None, cancel_cb=None) -> dict:
         if not wedge_mask[k]:
             design[:, k] = 0
     n_states = min(DEMO_STATES if p["mode"] == "demo" else L, L)
-    masks = wedge_masks(W, N)
+    masks = wedge_masks(W, N, float(p["wedge_rotation"]))
     env = fade_envelope(frames_per_state, fade)
 
     # off-axis orientation wedges narrow as K grows, to avoid overlap
@@ -495,6 +497,7 @@ def generate_movie(params: dict, progress_cb=None, cancel_cb=None) -> dict:
     H_orient = [spatial_filter(W, sf_lo, sf_hi, sf_shape, angles[i], halfwidth)[:, :, None] * a_t_state
                 for i in range(K)]
     H_iso_state = spatial_filter(W, sf_lo, sf_hi, sf_shape)[:, :, None] * a_t_state
+    H_iso_pad = None
     if pad > 0:
         H_iso_pad = spatial_filter(W, sf_lo, sf_hi, sf_shape)[:, :, None] * \
             temporal_filter(pad, fps, tf_lo, tf_hi, tf_shape)
@@ -567,7 +570,8 @@ def generate_movie(params: dict, progress_cb=None, cancel_cb=None) -> dict:
 
     # --- metadata for the viewer ---
     meta = {
-        "width": W, "n_wedges": N, "fps": fps, "wedge_sec": float(p["wedge_sec"]),
+        "width": W, "n_wedges": N, "wedge_rotation": float(p["wedge_rotation"]),
+        "fps": fps, "wedge_sec": float(p["wedge_sec"]),
         "frames_per_state": frames_per_state, "generated_states": n_states, "total_states": L,
         "pad_frames": pad, "movie_start": movie_start, "movie_end": movie_end,
         "total_frames": saved[0], "fade_frames": min(fade, frames_per_state // 2),

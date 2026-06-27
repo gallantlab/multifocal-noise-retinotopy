@@ -1,3 +1,6 @@
+# Session memory (local only)
+claude-session-memory*.md
+
 # Python
 __pycache__/
 *.pyc

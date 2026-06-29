@@ -96,7 +96,7 @@ Defaults below mirror `DEFAULTS` in `generator.py` (and the `index.html` form). 
 | SF shape | 1/f \| flat | 1/f | Spatial amplitude spectrum. |
 | lowest / highest SF | cyc/width | 2 / 128 | Spatial passband in cycles across the movie width. Changing **movie width** auto-rescales these by the width ratio to keep the same cycle proportions (constant cycles-per-pixel), which also keeps the band within the Nyquist. |
 | # orientations | – | 2 | Equally spaced image orientations `i·180/K`. |
-| background | gray \| random \| oriented \| oriented_mseq | gray | `random` = isotropic noise behind the wedges; `oriented` = single-orientation noise whose angle is, each state, as orthogonal as possible to that state's wedge orientations; `oriented_mseq` = single-orientation noise whose angle is set, each state, by a **third m-sequence** (interleaved `90/K°` from the foreground angles; K=2 → 45°/135°). See the UI reference for both oriented modes. |
+| background | gray \| random \| oriented \| oriented_mseq | gray | `random` = isotropic noise behind the wedges; `oriented` = single-orientation noise whose angle is, each state, as orthogonal as possible to that state's wedge orientations; `oriented_mseq` = single-orientation noise whose angle is set, each state, by a **third m-sequence** (interleaved `90/K°` from the foreground angles; `K=2` → 45°/135°). See the UI reference for both oriented modes. |
 | fade frames | frames | 5 | Per-state fade in/out. |
 | padding | sec | 2 | Full-screen isotropic noise before & after the movie. |
 | fixation spot | off \| on | on | A 2×2-px square at the display center that switches to a random color every 0.5 s (baked into every frame; color sequence recorded in metadata). |
@@ -399,9 +399,9 @@ With the defaults (**8 regions, K=2**) there are **3** background orientations:
 This whole table and its region-count dependence apply **only to the `oriented`
 background**. The **`oriented_mseq`** background sidesteps it entirely: its third
 m-sequence cycles through exactly **`K`** background orientations — the interleaved
-angles recorded in `bg_angles` (K=2 → 45°/135°; K=4 → 22.5/67.5/112.5/157.5°) —
+angles recorded in `bg_angles` (`K=2` → 45°/135°; `K=4` → 22.5/67.5/112.5/157.5°) —
 **regardless of region count**, with near-balanced occurrence for powers of two
-(K=2 → 31/32 over the 63 states; K=4 → 15/16/16/16) and the same `mod K` bias as
+(`K=2` → 31/32 over the 63 states; `K=4` → 15/16/16/16) and the same `mod K` bias as
 the foreground otherwise. So if you want a background that varies evenly over the
 run independent of `N`, use `oriented_mseq` rather than `oriented`.
 

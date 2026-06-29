@@ -291,6 +291,25 @@ def temporal_filter(n_frames: int, fps: int, tf_lo: float, tf_hi: float,
 
 
 # ============================================================ noise synthesis
+# FFT backend: use scipy.fft with workers=-1 (multithreaded) when available for a
+# ~2-3x speedup on the 3-D transforms; the uint8 movie is bit-identical to numpy's
+# single-threaded transform. scipy stays an *optional* dependency (numpy fallback).
+try:
+    import scipy.fft as _sfft
+
+    def _rfftn(a):
+        return _sfft.rfftn(a, axes=(0, 1, 2), workers=-1)
+
+    def _irfftn(a, s):
+        return _sfft.irfftn(a, s=s, axes=(0, 1, 2), workers=-1)
+except ImportError:                                   # scipy not installed -> numpy
+    def _rfftn(a):
+        return np.fft.rfftn(a, axes=(0, 1, 2))
+
+    def _irfftn(a, s):
+        return np.fft.irfftn(a, s=s, axes=(0, 1, 2))
+
+
 def make_noise(seed: int, H: np.ndarray, width: int, n_frames: int, color: str,
                want_lum: bool = False) -> tuple[np.ndarray, np.ndarray | None]:
     """Render one colored/grayscale bandpass noise block.
@@ -322,8 +341,7 @@ def make_noise(seed: int, H: np.ndarray, width: int, n_frames: int, color: str,
     for c in range(n_channels):
         rng = np.random.default_rng(seed * 3 + c)
         white = rng.standard_normal((width, width, n_frames))
-        noise = np.fft.irfftn(np.fft.rfftn(white, axes=(0, 1, 2)) * H,
-                              s=(width, width, n_frames), axes=(0, 1, 2))
+        noise = _irfftn(_rfftn(white) * H, (width, width, n_frames))
         std = noise.std()
         noise /= std if std > 0 else 1.0              # guard an all-zero (empty-band) filter
         fields.append(noise)

@@ -48,7 +48,7 @@ FRAME_DIR = os.path.join(HERE, "frames")
 # --- fixed design constants ---
 BG = 128                       # mid-gray background / zero-contrast level
 GAIN = 38.0                    # gray-levels per noise std (sets contrast; ~0.05% clip at 1/f)
-BASE_SEED = 1234               # base RNG seed (fixed -> reproducible movies)
+BASE_SEED = 1234               # default base RNG seed (overridable via the "seed" param)
 LFSR_N = 6                     # m-sequence order -> L = 2**6 - 1 = 63 states
 ONOFF_TAPS = [6, 1]            # primitive poly x^6+x+1     : on/off m-sequence
 ORIENT_TAPS = [6, 4, 3, 1]     # primitive poly x^6+x^4+x^3+x+1: orientation m-sequence
@@ -73,6 +73,7 @@ DEFAULTS = {
     "background": "gray",                                # gray | random | oriented | oriented_mseq
     "fade_frames": 5, "pad_sec": 2.0,
     "fixation": "on",                                    # off | on (central 2x2 spot)
+    "seed": BASE_SEED,                                   # base RNG seed (same seed -> identical movie)
     "mode": "demo",                                      # demo | full
 }
 
@@ -616,6 +617,14 @@ def generate_movie(params: dict,
     K = max(1, int(p["n_orientations"]))
     frames_per_state = max(1, round(fps * float(p["wedge_sec"])))
     fade, pad = int(p["fade_frames"]), round(float(p["pad_sec"]) * fps)
+    # Base RNG seed: any non-negative int. Per-block seeds are this plus fixed disjoint
+    # offsets, so the offset structure (not the base value) guarantees blocks stay
+    # independent; the same seed -> an identical movie.
+    try:
+        base_seed = abs(int(p["seed"]))
+    except (TypeError, ValueError):
+        base_seed = BASE_SEED
+    p["seed"] = base_seed
     color, bg_mode = p["color"], p["background"]
     sf_lo, sf_hi, sf_shape = float(p["sf_lo"]), float(p["sf_hi"]), p["sf_shape"]
     tf_lo, tf_hi, tf_shape = float(p["tf_lo"]), float(p["tf_hi"]), p["tf_shape"]
@@ -686,7 +695,7 @@ def generate_movie(params: dict,
     fix_colors = None
     if fixation:
         n_blocks = (total + fix_block - 1) // fix_block
-        fix_colors = np.random.default_rng(BASE_SEED + 4242).integers(
+        fix_colors = np.random.default_rng(base_seed + 4242).integers(
             0, 256, (n_blocks, 3), dtype=np.uint8)
 
     def emit(frame: np.ndarray) -> None:
@@ -710,7 +719,7 @@ def generate_movie(params: dict,
             emit(rgb[:, :, t, :])
 
     # --- render: padding, states, padding ---
-    emit_padding(BASE_SEED + 7000)
+    emit_padding(base_seed + 7000)
     movie_start = saved[0]
 
     # one luminance carrier per orientation, sampled from the first rendered state that
@@ -724,18 +733,18 @@ def generate_movie(params: dict,
             capture_state = s
         background = None
         if bg_mode == "random":
-            background, _ = make_noise(BASE_SEED + 5000 + s, H_iso_state, W, frames_per_state, color)
+            background, _ = make_noise(base_seed + 5000 + s, H_iso_state, W, frames_per_state, color)
         elif oriented_bg:
             # single whole-field orientation per state (orthogonal- or m-sequence-driven)
             H_bg = (H_bg_orient[bg_index[s]] if bg_mode == "oriented_mseq"
                     else spatial_filter(W, sf_lo, sf_hi, sf_shape, bg_orient[s], halfwidth)[:, :, None] * a_t_state)
-            background, _ = make_noise(BASE_SEED + 5000 + s, H_bg, W, frames_per_state, color)
+            background, _ = make_noise(base_seed + 5000 + s, H_bg, W, frames_per_state, color)
         carriers = {}
         for k in on:
             check_cancel()
             orient = orient_index[s, k]
             capture = s == capture_state and orient not in spectra_lum
-            rgb, lum = make_noise(BASE_SEED + s * N + k, H_orient[orient], W, frames_per_state,
+            rgb, lum = make_noise(base_seed + s * N + k, H_orient[orient], W, frames_per_state,
                                   color, want_lum=capture)
             carriers[k] = rgb
             if capture:
@@ -749,7 +758,7 @@ def generate_movie(params: dict,
                 frame[masks[k]] = (base + env[t] * (carrier - base))[masks[k]]
             emit(frame)
     movie_end = saved[0]
-    emit_padding(BASE_SEED + 8000)
+    emit_padding(base_seed + 8000)
 
     # --- spectra (sampled from the first non-empty state's carriers) ---
     spectra_files = ["temporal_spectrum.png", "spatial_spectrum.png", "orientation_spectrum.png"]
@@ -776,6 +785,7 @@ def generate_movie(params: dict,
         "pad_frames": pad, "movie_start": movie_start, "movie_end": movie_end,
         "total_frames": saved[0], "fade_frames": min(fade, frames_per_state // 2),
         "color": color, "background": bg_mode, "bg_orient": bg_orient, "bg_angles": bg_angles,
+        "seed": base_seed,
         "fixation": p["fixation"],
         "fixation_block_frames": fix_block if fixation else 0,
         "fixation_colors": fix_colors.tolist() if fixation else [],

@@ -110,6 +110,7 @@
         <tr><td>fade between states</td><td>frames</td><td>5</td><td>Per-state contrast ramp in/out (to background). Clamped to <code>frames_per_state/2</code>.</td></tr>
         <tr><td>padding before/after</td><td>sec</td><td>2</td><td>Full-screen isotropic 1/f noise prepended and appended.</td></tr>
         <tr><td>fixation spot</td><td>off&nbsp;|&nbsp;on</td><td>on</td><td>Central 2×2-px square, random colour every 0.5 s; colour sequence recorded.</td></tr>
+        <tr><td>random seed</td><td>int ≥ 0</td><td>1234</td><td>Base RNG seed. Same seed + params → identical movie; change it for a new realization with the same statistics. Negatives use <code>abs</code>, non-numeric falls back to 1234. Recorded in metadata.</td></tr>
         <tr><td>demo / full</td><td>—</td><td>demo</td><td><code>demo</code> = first 5 states; <code>full</code> = all 63.</td></tr>
       </tbody>
     </table>
@@ -153,7 +154,7 @@ pixel = clip(128 + 38 * noise, 0, 255)  # BG=128, GAIN=38 gray-levels/std</code>
       <li><strong>Colour:</strong> 3 independent fields through the same <code>H</code> (each
         Fourier component a random RGB); BW replicates one field.</li>
       <li><strong>Independence:</strong> every region uses its own seed
-        (<code>BASE_SEED + s·N + k</code>), so adjacent regions do not blend — a deliberate
+        (<code>seed + s·N + k</code>), so adjacent regions do not blend — a deliberate
         seam at shared boundaries keeps them separable.</li>
     </ul>
 
@@ -242,8 +243,10 @@ pixel = clip(128 + 38 * noise, 0, 255)  # BG=128, GAIN=38 gray-levels/std</code>
         63 regions cannot get distinct shifts (collinear regressors).</li>
       <li><strong>Fades are to background, not crossfades:</strong> states do not overlap; the
         screen returns to the background between them.</li>
-      <li><strong>Reproducibility:</strong> all RNG seeds derive from a fixed
-        <code>BASE_SEED</code>, so identical parameters reproduce an identical movie.</li>
+      <li><strong>Reproducibility:</strong> all RNG seeds derive from the <code>seed</code>
+        parameter (default 1234, settable in the UI), so identical parameters + seed reproduce
+        an identical movie; a different seed gives a new realization with the same statistics.
+        The seed is recorded in <code>movie_meta.json</code>.</li>
       <li><strong>Padding &amp; <code>random</code> background</strong> are isotropic (no
         orientation filtering).</li>
     </ul>
@@ -265,9 +268,9 @@ pixel = clip(128 + 38 * noise, 0, 255)  # BG=128, GAIN=38 gray-levels/std</code>
       <code>orient_angles</code>, <code>wedge_mask</code>, <code>wedge_rotation</code>,
       <code>bg_orient</code> (background angle for every state) +
       <code>bg_angles</code> (the m-seq background angle set),
-      <code>fixation_colors</code> + <code>fixation_block_frames</code>, all timing and band
-      settings, and the echoed <code>params</code>. Design arrays cover all 63 states even in
-      demo mode.</p>
+      <code>fixation_colors</code> + <code>fixation_block_frames</code>, the
+      <code>seed</code>, all timing and band settings, and the echoed <code>params</code>.
+      Design arrays cover all 63 states even in demo mode.</p>
 
     <footer>
       Retinotopy movie maker. Conceptual introduction: <a href="docs.html">Beginner's guide</a>.

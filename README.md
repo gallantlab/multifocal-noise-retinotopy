@@ -100,6 +100,7 @@ Defaults below mirror `DEFAULTS` in `generator.py` (and the `index.html` form). 
 | fade frames | frames | 5 | Per-state fade in/out. |
 | padding | sec | 2 | Full-screen isotropic noise before & after the movie. |
 | fixation spot | off \| on | on | A 2×2-px square at the display center that switches to a random color every 0.5 s (baked into every frame; color sequence recorded in metadata). |
+| random seed | integer ≥ 0 | 1234 | Base RNG seed. The **same seed + same parameters → an identical movie**; change it to draw a different noise realization with the *same* statistics. Negative values are coerced to their absolute value; non-numeric falls back to 1234. Recorded in metadata. |
 | demo / full | – | demo | `demo` = first 5 states, `full` = all 63. |
 
 "1/f" means **amplitude ∝ 1/f** (power ∝ 1/f²).
@@ -435,8 +436,10 @@ gain in `generator.py` (`GAIN`) if clipping matters for your stimulus.
 ## Notes
 
 - The number of states is fixed at 63 (a 6-bit m-sequence). Demo = first 5.
-- Random seeds are fixed (`BASE_SEED` in `generator.py`), so a given parameter set
-  reproduces the same movie.
+- All RNG seeds derive from the **`seed`** parameter (default 1234, settable in the
+  UI; `BASE_SEED` in `generator.py` is only the default). The same seed + parameters
+  reproduce the same movie; a different seed gives a new noise realization with the
+  same statistics. The seed used is recorded in `movie_meta.json`.
 - Earlier development happened in stages (rotating wedge → m-sequence → 1/f noise
   → vertical-only orientation → multicolor → per-wedge V/H → fades → UI); the
   `make_*.py` scripts capture those steps and are superseded by `generator.py`.

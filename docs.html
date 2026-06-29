@@ -275,6 +275,12 @@
       <dt>fixation spot <span class="muted">(on)</span></dt>
       <dd>Turns the central colour-changing dot on or off.</dd>
 
+      <dt>random seed <span class="muted">(1234)</span></dt>
+      <dd>The starting number for all the randomness. Keep it the same and you get the
+        <em>exact</em> same movie every time; change it and you get a fresh, different-looking
+        noise movie with all the same settings. Useful for making several distinct movies that
+        are otherwise identical. It's saved with the movie so you can always tell which one was used.</dd>
+
       <dt>demo / full <span class="muted">(demo)</span></dt>
       <dd><code>demo</code> renders just the first 5 states for a quick preview;
         <code>full</code> renders all 63 (the real experiment — much slower).</dd>
@@ -299,7 +305,8 @@
       <li><strong>Fades go to the background, not across states.</strong> Between states the
         screen returns to the background; states don't cross-dissolve into each other.</li>
       <li><strong>Same settings → identical movie.</strong> The randomness is seeded, so
-        regenerating with the same parameters reproduces the exact same movie.</li>
+        regenerating with the same parameters (and the same <em>random seed</em>) reproduces the
+        exact same movie; change the seed for a fresh realization with the same settings.</li>
     </ul>
 
     <h3>How many background orientations will I get?</h3>
@@ -338,8 +345,8 @@
         one image per frame.</li>
       <li><code>movie_meta.json</code> — a complete record of <em>everything</em> that was
         shown (geometry, the full on/off and orientation schedules for all 63 states,
-        background angles, fixation colours, timing, and all settings). Enough to reconstruct
-        the experiment exactly.</li>
+        background angles, fixation colours, the random seed, timing, and all settings). Enough
+        to reconstruct the experiment exactly.</li>
       <li><code>design_matrix.png</code> / <code>orientation_matrix.png</code> — at-a-glance
         pictures of the on/off and orientation schedules (states down, regions across).</li>
       <li><code>temporal_spectrum.png</code>, <code>spatial_spectrum.png</code>,

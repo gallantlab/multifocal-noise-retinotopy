@@ -170,12 +170,13 @@ const FIELDS = [
   {k:"fade_frames",  label:"fade between states (frames)", type:"num"},
   {k:"pad_sec",      label:"padding before/after (sec)",   type:"num", step:"0.5"},
   {k:"fixation",     label:"fixation spot",                type:"sel", opts:["off","on"]},
+  {k:"seed",         label:"random seed",                  type:"num", step:"1", min:"0"},
   {k:"mode",         label:"demo / full",                  type:"sel", opts:["demo","full"]},
 ];
 const DEFAULTS = {geometry:"wedges",width:512,n_wedges:8,wedge_rotation:22.5,ring_spacing:"log",
   wedge_sec:4.1,fps:30,color:"color",
   tf_shape:"1/f",tf_lo:0.5,tf_hi:15,sf_shape:"1/f",sf_lo:2,sf_hi:128,
-  n_orientations:2,background:"gray",fade_frames:5,pad_sec:2,fixation:"on",mode:"demo"};
+  n_orientations:2,background:"gray",fade_frames:5,pad_sec:2,fixation:"on",seed:1234,mode:"demo"};
 
 // ---- build the form ----
 const form = document.getElementById('form');
@@ -205,7 +206,7 @@ for (const f of FIELDS) {
     el = document.createElement('select');
     for (const o of f.opts) { const op = document.createElement('option'); op.value = o; op.textContent = o; el.appendChild(op); }
   } else {
-    el = document.createElement('input'); el.type = 'number'; if (f.step) el.step = f.step;
+    el = document.createElement('input'); el.type = 'number'; if (f.step) el.step = f.step; if (f.min !== undefined) el.min = f.min;
   }
   row.appendChild(el); form.appendChild(row); inputs[f.k] = el; rows[f.k] = row; labelEls[f.k] = name;
 }
@@ -447,7 +448,7 @@ function fail(msg){ statusEl.className='err'; statusEl.textContent='error: '+msg
       "Generation needs the server: run <b>python3 server.py</b> and open <b>http://localhost:8000</b>.";
     return;
   }
-  setForm(DEFAULTS);              // form always starts at the INTERFACE.txt defaults
+  setForm(DEFAULTS);              // form always starts at the DEFAULTS above (mirrors generator.py)
   try{
     const meta=await (await fetch('movie_meta.json?t='+Date.now())).json();
     buildViewer(meta);            // show whatever movie currently exists

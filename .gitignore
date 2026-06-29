@@ -8,6 +8,11 @@ __pycache__/
 # Generated movie frames
 frames/
 
+# Saved movie outputs: default output folder (server.py) + any encoded mp4.
+# If you set a custom "output folder" name in the UI, add it here too.
+/output/
+*.mp4
+
 # Generated plots / matrices / metadata (root only; keeps docs/ images)
 /*.png
 movie_meta.js

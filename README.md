@@ -20,7 +20,9 @@ are written as a sequence of PNG frames.
 
 ## Quick start
 
-Requirements: Python 3 with `numpy`, `Pillow`, `matplotlib` (no other deps).
+Requirements: Python 3 with `numpy`, `Pillow`, `matplotlib`. `scipy` is an
+optional accelerator — if installed, noise synthesis uses its multithreaded FFT
+(~2–3× faster, bit-identical output); without it, generation falls back to numpy.
 
 ```bash
 python3 server.py          # starts a local server (stdlib only)

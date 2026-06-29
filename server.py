@@ -62,7 +62,10 @@ CANCEL = threading.Event()
 
 def _safe_dirname(name: str) -> str:
     """One safe folder name under the app dir (no path traversal / absolute paths)."""
-    return os.path.basename(str(name or "").strip()) or DEFAULT_OUTPUT_DIR
+    clean = os.path.basename(os.path.normpath(str(name or "").strip()))
+    if not clean or clean in (".", ".."):            # reject empty / traversal -> default
+        return DEFAULT_OUTPUT_DIR
+    return clean
 
 
 def save_outputs(params: dict, meta: dict) -> None:
@@ -102,6 +105,8 @@ def save_outputs(params: dict, meta: dict) -> None:
         print(f"[encode] wrote {out_mp4}")
     except subprocess.CalledProcessError as exc:                 # non-fatal: frames still exist
         print("[encode] ffmpeg failed:\n", exc.stderr.decode(errors="replace")[-2000:])
+    except OSError as exc:                                       # non-fatal: e.g. permission denied
+        print(f"[encode] ffmpeg execution failed: {exc}")
 
 
 def run_job(params: dict) -> None:

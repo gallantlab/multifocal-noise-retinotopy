@@ -47,7 +47,10 @@ FRAME_DIR = os.path.join(HERE, "frames")
 
 # --- fixed design constants ---
 BG = 128                       # mid-gray background / zero-contrast level
-GAIN = 38.0                    # gray-levels per noise std (sets contrast; ~0.05% clip at 1/f)
+GAIN = 38.0                    # gray-levels per luminance-noise std (sets contrast; ~0.05% clip at 1/f)
+GAIN_C = 38.0                  # gray-levels per chroma-residual std in color mode (color saturation;
+                               # 0 -> grayscale). Chroma is zero-sum across RGB so it does not change
+                               # the luminance, which always carries the orientation at full GAIN.
 BASE_SEED = 1234               # default base RNG seed (overridable via the "seed" param)
 LFSR_N = 6                     # m-sequence order -> L = 2**6 - 1 = 63 states
 ONOFF_TAPS = [6, 1]            # primitive poly x^6+x+1     : on/off m-sequence
@@ -315,39 +318,59 @@ def make_noise(seed: int, H: np.ndarray, width: int, n_frames: int, color: str,
     """Render one colored/grayscale bandpass noise block.
 
     White noise is shaped by the separable filter ``H`` in the 3-D Fourier domain
-    (``rfftn`` over x, y, t). For ``color`` each RGB channel is an *independent*
-    field through the same ``H`` (so each Fourier component carries a random RGB);
-    for ``bw`` a single field is replicated to all channels.
+    (``rfftn`` over x, y, t). The orientation always lives in the **luminance**:
+
+    - ``bw`` -- one oriented field, replicated to R=G=B.
+    - ``color`` -- one oriented **luminance carrier** (at full ``GAIN``) plus three
+      oriented **chroma** fields whose per-pixel mean across R,G,B is removed
+      (``g_c - mean(g)``). Because the chroma is zero-sum across channels, the
+      RGB-mean luminance is exactly the carrier, so colour does **not** dilute the
+      luminance-defined orientation signal (cf. the old design, where three
+      independent channels reduced luminance contrast by ~1/sqrt(3)). The chroma
+      shares the same orientation filter ``H``, so it adds colour without injecting
+      any off-orientation energy. ``GAIN_C`` sets the colour saturation.
+
+    The downstream analysis reads luminance only, so this is the colour mode to use
+    when you want full orientation drive *and* colour for cortical stimulation.
 
     Parameters
     ----------
     seed : int
-        Base RNG seed; channel ``c`` uses ``seed*3 + c`` (disjoint streams).
+        Base RNG seed; the luminance + 3 chroma fields use ``seed*4 + {0,1,2,3}``
+        (disjoint streams; the ``*4`` spacing keeps neighbouring region seeds clear).
     H : np.ndarray, shape (width, width, n_frames//2+1)
         Separable spatial x temporal amplitude filter.
     color : str
-        ``"color"`` (3 independent channels) or ``"bw"`` (1 channel).
+        ``"color"`` (luminance + zero-sum chroma) or ``"bw"`` (single field).
     want_lum : bool
-        If True, also return the mean-of-channels luminance (for spectra plots).
+        If True, also return the luminance carrier (for spectra plots).
 
     Returns
     -------
     rgb : np.ndarray, shape (width, width, n_frames, 3), uint8
     lum : np.ndarray | None, shape (width, width, n_frames), float
     """
+    shape = (width, width, n_frames)
+
+    def oriented_field(sub: int) -> np.ndarray:
+        white = np.random.default_rng(seed * 4 + sub).standard_normal(shape)
+        f = _irfftn(_rfftn(white) * H, shape)
+        std = f.std()
+        return f / (std if std > 0 else 1.0)          # guard an all-zero (empty-band) filter
+
+    lum_field = oriented_field(0)                     # luminance carrier (carries the orientation)
     rgb = np.empty((width, width, n_frames, 3), dtype=np.uint8)
-    n_channels = 3 if color == "color" else 1
-    fields = []
-    for c in range(n_channels):
-        rng = np.random.default_rng(seed * 3 + c)
-        white = rng.standard_normal((width, width, n_frames))
-        noise = _irfftn(_rfftn(white) * H, (width, width, n_frames))
-        std = noise.std()
-        noise /= std if std > 0 else 1.0              # guard an all-zero (empty-band) filter
-        fields.append(noise)
-    for c in range(3):                                # bw replicates the single field
-        rgb[..., c] = np.clip(BG + GAIN * fields[c % n_channels], 0, 255).astype(np.uint8)
-    lum = np.mean(fields, axis=0) if want_lum else None
+    if color == "color":
+        g = [oriented_field(1 + c) for c in range(3)]
+        gbar = (g[0] + g[1] + g[2]) / 3.0             # zero-sum chroma -> luminance unchanged
+        for c in range(3):
+            rgb[..., c] = np.clip(BG + GAIN * lum_field + GAIN_C * (g[c] - gbar),
+                                  0, 255).astype(np.uint8)
+    else:                                             # bw: single grey field
+        grey = np.clip(BG + GAIN * lum_field, 0, 255).astype(np.uint8)
+        for c in range(3):
+            rgb[..., c] = grey
+    lum = lum_field if want_lum else None
     return rgb, lum
 
 

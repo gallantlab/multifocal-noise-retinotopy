@@ -96,7 +96,7 @@ Defaults below mirror `DEFAULTS` in `generator.py` (and the `index.html` form). 
 | SF shape | 1/f \| flat | 1/f | Spatial amplitude spectrum. |
 | lowest / highest SF | cyc/width | 2 / 128 | Spatial passband in cycles across the movie width. Changing **movie width** auto-rescales these by the width ratio to keep the same cycle proportions (constant cycles-per-pixel), which also keeps the band within the Nyquist. |
 | # orientations | – | 2 | Equally spaced image orientations `i·180/K`. |
-| background | gray \| random \| oriented | gray | `random` = isotropic noise behind the wedges; `oriented` = single-orientation noise whose angle is, each state, as orthogonal as possible to that state's wedge orientations. |
+| background | gray \| random \| oriented \| oriented_mseq | gray | `random` = isotropic noise behind the wedges; `oriented` = single-orientation noise whose angle is, each state, as orthogonal as possible to that state's wedge orientations; `oriented_mseq` = single-orientation noise whose angle is set, each state, by a **third m-sequence** (interleaved `90/K°` from the foreground angles; `K=2` → 45°/135°). See the UI reference for both oriented modes. |
 | fade frames | frames | 5 | Per-state fade in/out. |
 | padding | sec | 2 | Full-screen isotropic noise before & after the movie. |
 | fixation spot | off \| on | on | A 2×2-px square at the display center that switches to a random color every 0.5 s (baked into every frame; color sequence recorded in metadata). |
@@ -361,12 +361,12 @@ when a state mixes orientations the background takes the best-compromise angle
 (e.g. 45° for {0°, 90°}), which may itself be off-axis (a thin Fourier wedge). The
 per-state background orientations are saved in `bg_orient` for the full design.
 
-**How many distinct background orientations will an experiment contain?** The
-background angle depends only on *which subset* of the `K` region orientations is
-present in a state (not on how many regions show it), passed through the
-largest-empty-arc rule. Every output therefore lands on a `90/K`° grid, so there
-are at most **2K** possible values — but far fewer actually occur. Counting the
-distinct `bg_orient` values across all 63 states:
+**How many distinct background orientations will an experiment contain (with the
+`oriented` background)?** The background angle depends only on *which subset* of
+the `K` region orientations is present in a state (not on how many regions show
+it), passed through the largest-empty-arc rule. Every output therefore lands on a
+`90/K`° grid, so there are at most **2K** possible values — but far fewer actually
+occur. Counting the distinct `bg_orient` values across all 63 states:
 
 | # wedges/rings | # region orientations (K) | # background orientations | background values (deg) |
 |---:|---:|---:|---|
@@ -395,6 +395,15 @@ With the defaults (**8 regions, K=2**) there are **3** background orientations:
   the full set always maps to the single symmetric angle `90/K`°. So large `N`
   drives the background toward one constant value (`K=2` → just 45°); use smaller
   `N` or larger `K` if you want the background orientation to *vary* over the run.
+
+This whole table and its region-count dependence apply **only to the `oriented`
+background**. The **`oriented_mseq`** background sidesteps it entirely: its third
+m-sequence cycles through exactly **`K`** background orientations — the interleaved
+angles recorded in `bg_angles` (`K=2` → 45°/135°; `K=4` → 22.5/67.5/112.5/157.5°) —
+**regardless of region count**, with near-balanced occurrence for powers of two
+(`K=2` → 31/32 over the 63 states; `K=4` → 15/16/16/16) and the same `mod K` bias as
+the foreground otherwise. So if you want a background that varies evenly over the
+run independent of `N`, use `oriented_mseq` rather than `oriented`.
 
 ### 10. Fades are to background, not crossfades
 Each state fades its contrast in from / out to the background over `fade frames`.

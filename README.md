@@ -68,21 +68,21 @@ the first 5 states; "full" renders all 63.
 
 | File | Role |
 |------|------|
-| `generator.py` | The parameterized generator: `generate_movie(params, progress_cb, cancel_cb)`. Builds both m-sequences, renders frames, spectra, matrices, and `movie_meta.json`. |
+| `generator.py` | The parameterized generator: `generate_movie(params, progress_cb, cancel_cb)`. Builds the m-sequences, renders frames, spectra, matrices, and `movie_meta.json`. |
 | `server.py` | Local HTTP server (stdlib). Serves the UI and assets; `POST /generate`, `GET /status`, `POST /cancel`. |
 | `index.html` | Web UI (parameter form + Generate/Cancel) and the viewer (movie player, on/off & orientation matrices, spectra). Reads `movie_meta.json`. |
-| `INTERFACE.txt` | The parameter spec (name, units, default) the UI is built from. |
+| `INTERFACE.txt` | The *original* parameter sketch (name, units, default). Historical reference only — it predates several options (geometry/rings, `oriented`/`oriented_mseq` backgrounds, fixation, …); the live defaults are `DEFAULTS` in `generator.py` and the form fields in `index.html`. |
 | `make_movie.py`, `make_msequence_movie.py`, `make_noise_movie.py`, `generate_design_matrix.py` | **Legacy / incremental** development scripts (rotating wedge → m-sequence → noise → orientation → …). Superseded by `generator.py`; kept for reference. |
 
 ---
 
 ## Parameters
 
-From `INTERFACE.txt` (defaults shown). All are exposed in the UI.
+Defaults below mirror `DEFAULTS` in `generator.py` (and the `index.html` form). All are exposed in the UI.
 
 | Parameter | Units | Default | Notes |
 |-----------|-------|---------|-------|
-| stimulus | wedges \| rings | wedges | Geometry of the disc regions: `wedges` = equal angular sectors (polar-angle mapping); `rings` = concentric annuli (eccentricity mapping). Everything else — the two m-sequences, orientation, noise, fades, subset, background, fixation — is identical for both. The region count, subset toggles, and per-state durations relabel from "wedge…" to "ring…". |
+| stimulus | wedges \| rings | wedges | Geometry of the disc regions: `wedges` = equal angular sectors (polar-angle mapping); `rings` = concentric annuli (eccentricity mapping). Everything else — the m-sequences, orientation, noise, fades, subset, background, fixation — is identical for both. The region count, subset toggles, and per-state durations relabel from "wedge…" to "ring…". |
 | movie width | pixels | 512 | Frame is `width × width`. |
 | # wedges / # rings | – | 8 | Number of regions: equal angular wedges, or concentric rings. |
 | wedges / rings shown | – | all on | Per-region include/exclude toggles (with all/none/alternate presets). Excluded regions are always off; the geometry and m-sequence are unchanged. |
@@ -177,9 +177,9 @@ From `INTERFACE.txt` (defaults shown). All are exposed in the UI.
 
 - **\# orientations** — number `K` of equally spaced image orientations (`i·180/K`)
   the wedge/background textures can take. `K=2` → {0°, 90°}; `K=4` → add 45°/135°.
-  Each on-wedge's orientation is chosen by the orientation m-sequence. **Note:** 0°
-  and 90° are exact infinitely-narrow orientation bands; other angles use a thin
-  Fourier wedge (see caveats). Default 2.
+  Each on-wedge's orientation is chosen by the orientation m-sequence. **Note:**
+  every orientation (cardinal and oblique alike) uses the *same* thin Fourier
+  wedge, so all orientations have matched spatial bandwidth (see caveats). Default 2.
 
 - **background** — what fills the disc behind/around the wedges:
   - `gray` — flat mid-gray.
@@ -189,7 +189,15 @@ From `INTERFACE.txt` (defaults shown). All are exposed in the UI.
     orientations (the midpoint of the largest empty arc on the orientation circle;
     exactly perpendicular when the wedges share one orientation, 45° when both 0°
     and 90° are present). The angle changes from state to state and is recorded for
-    all 63 states in `bg_orient` (see Outputs). Default gray.
+    all 63 states in `bg_orient` (see Outputs).
+  - `oriented_mseq` — full-frame **single-orientation** 1/f noise whose angle is set,
+    *each state*, by a **third m-sequence** (distinct primitive polynomial
+    `x⁶+x⁵+x²+x+1`), decoded `mod K` like the foreground. Its `K` angles are the
+    foreground set rotated half a step (`90/K°`), so background and foreground
+    orientations **interleave** instead of coinciding (K=2: foreground 0°/90° →
+    background 45°/135°; K=1: 0° → 90°). Per-state angles are recorded in
+    `bg_orient`, the angle set in `bg_angles`.
+  - Default gray.
 
 - **fade between states (frames)** — length of the per-state contrast ramp. Each
   state fades its wedges in from / out to the background over this many frames (so a
@@ -248,18 +256,19 @@ below this can't be represented within a state (the default 0.5 Hz is safe).
 There is no temporal continuity *across* states.
 
 ### 3. Orientation filtering and the discrete FFT grid
-Orientation is imposed by keeping only the Fourier components along one line
-through the origin (an infinitely narrow orientation band):
+Orientation is imposed by keeping only the Fourier components within a **thin
+angular wedge** through the origin (half-width `min(4°, 90/2K°)`). **All**
+orientations — cardinals (0°/90°) and obliques (45°/135°) alike — use the *same*
+finite wedge.
 
-- **0° and 90°** are axis-aligned (`fx=0` / `fy=0`), so they are kept **exactly** —
-  a true infinitely-narrow line.
-- **Off-axis orientations** (e.g. 45° and 135° when `# orientations = 4`) cannot
-  be an exact line, because an arbitrary-angle line misses the integer FFT grid.
-  They instead use a **thin angular wedge** (a few degrees of orientation
-  bandwidth).
-
-**Consequence:** with `# orientations = 4`, the 0°/90° orientations are spectrally
-purer than the 45°/135° ones. With `# orientations = 2` (default), both are exact.
+A cardinal could instead be kept as an *exact* axis line (`fx=0` / `fy=0`), since
+it lands on the integer FFT grid, whereas an oblique cannot. But an exact line
+makes the field effectively **1-D and perfectly coherent along the bar**, while a
+wedge produces a **2-D texture** — so cardinal and oblique stimuli would differ
+in *coherence*, not just orientation. That is a confound for a figure/ground
+orientation contrast (a region could be distinguished by its coherence rather
+than its orientation). Using one finite wedge for every orientation matches their
+spatial bandwidth, so only orientation varies.
 
 ### 4. "# orientations" does not change the m-sequence — it changes bit decoding
 There is **one** binary orientation m-sequence (length 63). For `K` orientations,
@@ -282,11 +291,38 @@ Powers of two (2, 4, 8) stay close to balanced; non-powers (e.g. 3) are more
 biased because `mod K` folds the bit values unevenly. A proper K-ary m-sequence
 and grid-aligned off-axis orientations are possible but not yet implemented.
 
-### 5. Two decorrelated m-sequences (location vs. orientation)
-On/off uses primitive polynomial `x⁶+x+1` (taps `[6,1]`); orientation uses
-`x⁶+x⁴+x³+x+1` (taps `[6,4,3,1]`). Both have length 63. They are essentially
-uncorrelated (per-wedge correlation ≈ −0.02), so **wedge location and orientation
-are separately estimable** in an encoding model.
+### 5. Decorrelated m-sequences (location, orientation, background)
+The design uses up to **three** order-6 m-sequences, each from a distinct
+primitive polynomial, all of length 63:
+
+- **on/off** (region location): `x⁶+x+1` (taps `[6,1]`).
+- **orientation** (per-region foreground orientation): `x⁶+x⁴+x³+x+1` (taps `[6,4,3,1]`).
+- **background** (whole-field background orientation, *only* when `background =
+  oriented_mseq`): `x⁶+x⁵+x²+x+1` (taps `[6,5,2,1]`).
+
+Every region reads the on/off and orientation sequences at the *same* circular
+shift, so for every region their correlation is just the zero-shift correlation of
+the two base sequences (**≈ −0.02**); **wedge location and orientation are
+therefore separately estimable** in an encoding model. The background, by
+contrast, is a *single* stream read at one fixed shift (not per region), so its
+correlation with a given region's regressor depends on that region's shift and is
+**not** uniformly ≈ −0.02: at the defaults (N=8, K=2) it is ≈ −0.02 for most
+regions but ≈ 0.24 for one, and the worst case over all shifts is ≈ 0.27 (vs
+on/off) / ≈ 0.37 (vs orientation). These are modest — the background-orientation
+regressor stays separable from the foreground — but distinct primitive polynomials
+alone do *not* guarantee the tight decorrelation the same-shift foreground pair
+enjoys (that would require a preferred/Gold pair).
+
+The background stream is decoded `mod K` from `ceil(log₂K)` consecutive bits
+(exact only for K=2 — the same K-ary decoder, and the same bias, as the
+foreground). Its K angles are the foreground set `i·180/K` rotated by half a step
+(`90/K°`), so foreground and background orientations **interleave** rather than
+coincide (K=2: foreground 0°/90° → background 45°/135°; K=1: 0° → 90°). Because it
+is driven by its own schedule rather than recomputed from the on-regions, it
+cycles through all K background orientations regardless of region count — counts
+over 63 states are near-balanced for powers of two (K=2 → 31/32; K=4 →
+15/16/16/16) and more uneven otherwise (K=3 → 31/16/16). Contrast the `oriented`
+background in §9, whose distinct-angle count *shrinks* as regions grow.
 
 ### 6. Spatial frequency units and limits
 `cyc/width` = cycles per movie width, which equals the integer FFT index when the

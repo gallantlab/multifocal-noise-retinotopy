@@ -161,6 +161,18 @@
       information at once: <em>whether</em> it's on, and <em>which way</em> its texture points.
       The <strong># orientations</strong> control chooses how many equally-spaced directions
       are in play (2 → horizontal &amp; vertical; 4 → adds the two diagonals; etc.).</p>
+    <p>The <code>oriented_mseq</code> background (see below) adds a <strong>third m-sequence</strong>
+      (its own separate schedule) that points the whole background in its own direction each
+      state, largely uncorrelated with the regions.</p>
+    <div class="box tip">
+      <p class="lbl">one thing worth knowing</p>
+      <p>Every direction is built the same way — from a thin slice of nearby directions in the
+        maths behind the scenes. Horizontal and vertical <em>could</em> be made mathematically
+        perfect (razor-sharp stripes), but then they'd look cleaner than the diagonals, and a
+        region might stand out by looking <em>smoother</em> rather than by its orientation.
+        Building every direction identically keeps the only difference the one you care about:
+        orientation.</p>
+    </div>
 
     <h3 id="c-background">The background behind the regions</h3>
     <p>What fills the disc <em>around</em> the active regions is up to you:</p>
@@ -173,6 +185,12 @@
         full-screen <em>directional</em> noise whose angle is chosen, each state, to point as
         differently as possible from the active regions' stripes. This keeps the regions
         "popping out" from the background by orientation.</li>
+      <li><span class="tag" style="background:#2c2f36;color:#cfd3d8">oriented_mseq</span> —
+        full-screen <em>directional</em> noise whose angle follows its own independent schedule
+        (a separate m-sequence), set to angles that sit halfway between the regions' angles
+        (e.g. regions at 0°/90° → background at 45°/135°). Unlike <code>oriented</code>, its
+        angle doesn't depend on which regions happen to be on, so the background always cycles
+        through a full, even set of directions.</li>
     </ul>
 
     <h3 id="c-fixation">The fixation spot</h3>
@@ -241,8 +259,10 @@
         horizontal &amp; vertical; <code>4</code> → add the diagonals.</dd>
 
       <dt>background <span class="muted">(gray)</span></dt>
-      <dd><code>gray</code>, <code>random</code> (undirected noise), or <code>oriented</code>
-        (directional noise pointed away from the active regions). See above.</dd>
+      <dd><code>gray</code>, <code>random</code> (undirected noise), <code>oriented</code>
+        (directional noise pointed away from the active regions), or <code>oriented_mseq</code>
+        (directional noise on its own independent schedule, angles interleaved with the
+        regions'). See above.</dd>
 
       <dt>fade between states (frames) <span class="muted">(5)</span></dt>
       <dd>Each region eases on and off over this many frames instead of snapping, so the
@@ -268,9 +288,11 @@
         artefacts. (This is the "Nyquist" limit.)</li>
       <li><strong>You can't show detail finer than the pixels allow.</strong> The finest texture
         is set by the movie width; the highest spatial frequency caps at half the width.</li>
-      <li><strong>Horizontal and vertical are "perfect"; diagonals are approximate.</strong>
-        0° and 90° land exactly on the pixel grid; other angles are built from a thin slice of
-        directions, so they're slightly broader.</li>
+      <li><strong>Every orientation is built the same way.</strong> Each direction (horizontal,
+        vertical, and diagonal alike) is built from the same thin slice of directions. Horizontal
+        and vertical <em>could</em> be made mathematically perfect, but that would make them look
+        like clean stripes while diagonals look grainy — so a region could stand out by its
+        texture rather than its orientation. Treating them all the same keeps the comparison fair.</li>
       <li><strong>Neighbouring regions show a seam.</strong> Each region's noise is independent
         (its own random seed), so two adjacent regions don't blend — this is intentional and
         keeps them separable.</li>
@@ -304,6 +326,10 @@
       many regions on at once it's likely <em>all</em> orientations are present, and that
       always maps to the single "in-between" angle. If you want the background to <em>vary</em>,
       use fewer regions or more orientations.</p>
+    <p>The table above is only for the <code>oriented</code> background. The
+      <code>oriented_mseq</code> background avoids this entirely: it has its own schedule, so it
+      always cycles through a full, even set of <strong>K</strong> orientations (the angles
+      halfway between the regions' angles), no matter how many regions are on.</p>
 
     <h2 id="outputs">What comes out</h2>
     <p>Generating a movie writes, next to the program:</p>

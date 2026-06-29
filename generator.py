@@ -9,7 +9,9 @@ a second, independent m-sequence sets each on-region's noise *orientation*. Each
 on-region is filled with bandpass 1/f spatiotemporal noise (multicolored or
 grayscale), confined to a single orientation, and independent from every other
 region. States fade in/out to the background, and the movie can be padded with
-full-screen isotropic noise.
+full-screen isotropic noise. The background can be plain gray, isotropic noise,
+or a single oriented field whose orientation per state is either orthogonal to
+the on-wedges or set by a third m-sequence (distinct primitive polynomial).
 
 The single public entry point is :func:`generate_movie`, which writes a PNG
 sequence to ``frames/`` plus spectra plots, design/orientation matrices, and
@@ -50,8 +52,9 @@ BASE_SEED = 1234               # base RNG seed (fixed -> reproducible movies)
 LFSR_N = 6                     # m-sequence order -> L = 2**6 - 1 = 63 states
 ONOFF_TAPS = [6, 1]            # primitive poly x^6+x+1     : on/off m-sequence
 ORIENT_TAPS = [6, 4, 3, 1]     # primitive poly x^6+x^4+x^3+x+1: orientation m-sequence
+BG_TAPS = [6, 5, 2, 1]         # primitive poly x^6+x^5+x^2+x+1: background-orientation m-sequence
 DEMO_STATES = 5                # states rendered in "demo" mode
-WEDGE_HALFWIDTH = 4.0          # angular half-width (deg) of off-axis orientation wedges
+WEDGE_HALFWIDTH = 4.0          # angular half-width (deg) of the orientation wedges (all orientations)
 RING_FOVEA_FRAC = 0.05         # foveal radius offset (frac of max radius) for log ring spacing
 RING_SPACINGS = ("log", "equal_width", "equal_area")
 
@@ -67,7 +70,7 @@ DEFAULTS = {
     "tf_shape": "1/f", "tf_lo": 0.5, "tf_hi": 15.0,      # 1/f | flat
     "sf_shape": "1/f", "sf_lo": 2.0, "sf_hi": 128.0,     # cyc/width (cycles across the movie width)
     "n_orientations": 2,
-    "background": "gray",                                # gray | random | oriented
+    "background": "gray",                                # gray | random | oriented | oriented_mseq
     "fade_frames": 5, "pad_sec": 2.0,
     "fixation": "on",                                    # off | on (central 2x2 spot)
     "mode": "demo",                                      # demo | full
@@ -156,6 +159,44 @@ def build_design(n_regions: int, n_orientations: int
     return design, orient_index, angles, L
 
 
+def background_design(n_orientations: int) -> tuple[np.ndarray, list[float]]:
+    """Per-state background orientation from a third m-sequence.
+
+    A *third* m-sequence from a distinct primitive polynomial (``BG_TAPS``) sets a
+    single whole-field background orientation per state. It is read as one stream
+    at a fixed shift (not per region), so unlike the on/off and orientation pair --
+    which every region reads at the *same* shift, giving per-region correlation
+    ~= -0.02 -- its correlation with an individual region's regressor varies with
+    that region's shift and can reach ~0.24 (still modest; see README). The
+    orientation index is decoded from ``ceil(log2 K)`` consecutive bits (``mod K``)
+    -- the same K-ary decoder as the foreground, exact only for ``K == 2``. The
+    ``K`` background angles are the foreground set (``i*180/K``) rotated half a step
+    (``90/K`` deg) so background and foreground orientations interleave rather than
+    coincide (e.g. foreground 0/90 deg -> background 45/135 deg; K=1 -> 90 deg).
+
+    Parameters
+    ----------
+    n_orientations : int
+        Number of orientations ``K`` (matches the foreground).
+
+    Returns
+    -------
+    bg_index : np.ndarray, shape (L,), int in [0, K)
+        Background orientation index per state.
+    bg_angles : list[float]
+        The ``K`` background image orientations in degrees.
+    """
+    bseq = m_sequence(LFSR_N, BG_TAPS)
+    L = len(bseq)
+    n_bits = max(1, math.ceil(math.log2(n_orientations))) if n_orientations > 1 else 1
+    bg_index = np.array(
+        [sum(bseq[(s + j) % L] << j for j in range(n_bits)) % n_orientations
+         for s in range(L)], dtype=int)
+    offset = 90.0 / n_orientations
+    bg_angles = [(i * 180.0 / n_orientations + offset) % 180.0 for i in range(n_orientations)]
+    return bg_index, bg_angles
+
+
 def orthogonal_orientation(present_deg: list[float]) -> float:
     """Orientation (deg, in [0, 180)) maximally orthogonal to all given orientations.
 
@@ -186,9 +227,13 @@ def orientation_mask(FX: np.ndarray, FY: np.ndarray, theta_deg: float,
                      halfwidth: float) -> np.ndarray:
     """Boolean mask selecting one image orientation in the 2-D Fourier plane.
 
-    Axis-aligned orientations (0 / 90 deg) are kept as the *exact* infinitely
-    narrow Fourier line; an off-axis orientation cannot fall on the integer FFT
-    grid, so it is approximated by a thin angular wedge of the given half-width.
+    *Every* orientation -- including the cardinals (0 / 90 deg) -- is selected by
+    the same thin angular wedge of the given half-width. An exact infinitely
+    narrow Fourier line (e.g. ``FX == 0`` for 0 deg) would make cardinals *1-D*
+    and perfectly coherent along the bar, while obliques (which cannot fall on the
+    integer FFT grid) are necessarily 2-D textures -- so cardinal and oblique
+    stimuli would differ in coherence, not just orientation. Using one finite
+    wedge for all orientations matches their bandwidth so only orientation varies.
 
     Parameters
     ----------
@@ -197,13 +242,9 @@ def orientation_mask(FX: np.ndarray, FY: np.ndarray, theta_deg: float,
     theta_deg : float
         Target image orientation (0=horizontal bars, 90=vertical bars).
     halfwidth : float
-        Angular half-width (deg) used for off-axis orientations.
+        Angular half-width (deg) of the orientation wedge.
     """
     t = theta_deg % 180.0
-    if abs(t) < 1e-6 or abs(t - 180.0) < 1e-6:
-        return FX == 0                       # horizontal bars -> energy on fy axis
-    if abs(t - 90.0) < 1e-6:
-        return FY == 0                       # vertical bars   -> energy on fx axis
     pixel_orient = (np.degrees(np.arctan2(FY, FX)) + 90.0) % 180.0
     dist = np.abs(((pixel_orient - t + 90.0) % 180.0) - 90.0)
     return dist <= halfwidth
@@ -597,21 +638,33 @@ def generate_movie(params: dict,
         if not wedge_mask[k]:
             design[:, k] = 0
     # Background orientation for EVERY state (not just rendered ones), so the full
-    # design is recorded. Deterministic from the design; only used when
-    # background == "oriented" (the orthogonal-to-wedges angle, per state).
-    bg_orient = [orthogonal_orientation([angles[orient_index[s, k]]
-                                         for k in range(N) if design[s, k]])
-                 for s in range(L)] if bg_mode == "oriented" else []
+    # design is recorded. Two oriented modes, both yielding one angle per state:
+    #   "oriented"      -> orthogonal to whichever wedges are on (deterministic)
+    #   "oriented_mseq" -> a third m-sequence (distinct polynomial; interleaved angles)
+    bg_orient: list[float] = []
+    bg_angles: list[float] = []
+    if bg_mode == "oriented":
+        bg_orient = [orthogonal_orientation([angles[orient_index[s, k]]
+                                             for k in range(N) if design[s, k]])
+                     for s in range(L)]
+    elif bg_mode == "oriented_mseq":
+        bg_index, bg_angles = background_design(K)
+        bg_orient = [bg_angles[bg_index[s]] for s in range(L)]
+    oriented_bg = bg_mode in ("oriented", "oriented_mseq")
     n_states = min(DEMO_STATES if p["mode"] == "demo" else L, L)
     masks = (ring_masks(W, N, p["ring_spacing"]) if geometry == "rings"
              else wedge_masks(W, N, float(p["wedge_rotation"])))
     env = fade_envelope(frames_per_state, fade)
 
-    # off-axis orientation wedges narrow as K grows, to avoid overlap
+    # orientation wedges narrow as K grows, to avoid overlap between adjacent angles
     halfwidth = min(WEDGE_HALFWIDTH, 90.0 / K / 2.0) if K > 2 else WEDGE_HALFWIDTH
     a_t_state = temporal_filter(frames_per_state, fps, tf_lo, tf_hi, tf_shape)
     H_orient = [spatial_filter(W, sf_lo, sf_hi, sf_shape, angles[i], halfwidth)[:, :, None] * a_t_state
                 for i in range(K)]
+    # "oriented_mseq" background draws from K fixed angles -> precompute K filters (like H_orient).
+    # ("oriented" cannot: its angle is an arbitrary per-state orthogonal value.)
+    H_bg_orient = ([spatial_filter(W, sf_lo, sf_hi, sf_shape, bg_angles[i], halfwidth)[:, :, None] * a_t_state
+                    for i in range(K)] if bg_mode == "oriented_mseq" else None)
     H_iso_state = spatial_filter(W, sf_lo, sf_hi, sf_shape)[:, :, None] * a_t_state
     H_iso_pad = None
     if pad > 0:
@@ -672,9 +725,10 @@ def generate_movie(params: dict,
         background = None
         if bg_mode == "random":
             background, _ = make_noise(BASE_SEED + 5000 + s, H_iso_state, W, frames_per_state, color)
-        elif bg_mode == "oriented":
-            # single-orientation background, orthogonal to this state's wedges
-            H_bg = spatial_filter(W, sf_lo, sf_hi, sf_shape, bg_orient[s], halfwidth)[:, :, None] * a_t_state
+        elif oriented_bg:
+            # single whole-field orientation per state (orthogonal- or m-sequence-driven)
+            H_bg = (H_bg_orient[bg_index[s]] if bg_mode == "oriented_mseq"
+                    else spatial_filter(W, sf_lo, sf_hi, sf_shape, bg_orient[s], halfwidth)[:, :, None] * a_t_state)
             background, _ = make_noise(BASE_SEED + 5000 + s, H_bg, W, frames_per_state, color)
         carriers = {}
         for k in on:
@@ -721,7 +775,7 @@ def generate_movie(params: dict,
         "frames_per_state": frames_per_state, "generated_states": n_states, "total_states": L,
         "pad_frames": pad, "movie_start": movie_start, "movie_end": movie_end,
         "total_frames": saved[0], "fade_frames": min(fade, frames_per_state // 2),
-        "color": color, "background": bg_mode, "bg_orient": bg_orient,
+        "color": color, "background": bg_mode, "bg_orient": bg_orient, "bg_angles": bg_angles,
         "fixation": p["fixation"],
         "fixation_block_frames": fix_block if fixation else 0,
         "fixation_colors": fix_colors.tolist() if fixation else [],

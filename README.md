@@ -101,7 +101,8 @@ Defaults below mirror `DEFAULTS` in `generator.py` (and the `index.html` form). 
 | background | gray \| random \| oriented \| oriented_mseq | gray | `random` = isotropic noise behind the wedges; `oriented` = single-orientation noise whose angle is, each state, as orthogonal as possible to that state's wedge orientations; `oriented_mseq` = single-orientation noise whose angle is set, each state, by a **third m-sequence** (interleaved `90/K°` from the foreground angles; `K=2` → 45°/135°). See the UI reference for both oriented modes. |
 | fade frames | frames | 5 | Per-state fade in/out. |
 | padding | sec | 2 | Full-screen isotropic noise before & after the movie. |
-| fixation spot | off \| on | on | A 2×2-px square at the display center that switches to a random color every 0.5 s (baked into every frame; color sequence recorded in metadata). |
+| fixation spot | off \| on | on | A central fixation mark (`fixation shape` = `dot` filled circle or `cross`, ~0.1° / ~0.9% of width, scaling with resolution) that alternates **red/green** every **3–8 s** (random) as a dummy task; baked into every frame, schedule saved to `fixation_timing.csv` + metadata. |
+| fixation shape | dot \| cross | dot | Shape of the fixation mark: a filled circle (`dot`) or a plus sign (`cross`) of the same overall size. |
 | random seed | integer ≥ 0 | 1234 | Base RNG seed. The **same seed + same parameters → an identical movie**; change it to draw a different noise realization with the *same* statistics. Negative values are coerced to their absolute value; non-numeric falls back to 1234. Recorded in metadata. |
 | demo / full | – | demo | `demo` = first 5 states, `full` = all 63. |
 
@@ -210,10 +211,14 @@ Defaults below mirror `DEFAULTS` in `generator.py` (and the `index.html` form). 
 - **padding before/after (sec)** — seconds of full-screen **isotropic** 1/f noise
   prepended and appended to the movie (e.g. for fMRI run lead-in/out). Default 2.
 
-- **fixation spot** — `on` overlays a **2×2-pixel square at the exact center** of
-  every frame (padding included) that switches to a new **random color every
-  0.5 s**. Drawn on top at full contrast as a fixation target; the seeded
-  per-block color sequence is saved to `fixation_colors` in the metadata. Default on.
+- **fixation spot** — `on` overlays a central fixation mark on every frame
+  (padding included), drawn on top at full contrast as a dummy-task target.
+  `fixation shape` selects a filled circle (`dot`) or a plus sign (`cross`); both
+  span ~0.1° (≈0.9% of the movie width, scaling with resolution, matching the
+  presentation-code dot). The mark **alternates red/green** so every change is
+  visible, holding each color for a **random 3–8 s** interval. The seeded color
+  schedule (start/duration/color per block) is saved to `fixation_timing.csv` and
+  `fixation_schedule` in the metadata. Default on.
 
 - **demo / full** — `demo` renders only the first 5 states (quick iteration);
   `full` renders all 63. Default demo.

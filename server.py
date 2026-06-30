@@ -79,9 +79,11 @@ def save_outputs(params: dict, meta: dict) -> None:
     out_dir = os.path.join(generator.HERE, _safe_dirname(params.get("output_dir", DEFAULT_OUTPUT_DIR)))
     os.makedirs(out_dir, exist_ok=True)
 
-    meta_src = os.path.join(generator.HERE, "movie_meta.json")   # save the design alongside the movie
-    if os.path.exists(meta_src):
-        shutil.copy2(meta_src, os.path.join(out_dir, "movie_meta.json"))
+    # save the design + fixation colour timing alongside the movie
+    for fname in ("movie_meta.json", "fixation_timing.csv"):
+        src = os.path.join(generator.HERE, fname)
+        if os.path.exists(src):
+            shutil.copy2(src, os.path.join(out_dir, fname))
 
     if str(params.get("encode_mp4", "off")).lower() not in ("on", "true", "1", "yes"):
         return

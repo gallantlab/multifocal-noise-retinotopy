@@ -102,19 +102,15 @@ def fixation_mask(W: int, shape: str) -> np.ndarray:
     """
     cen = (W - 1) / 2.0                                # true image centre (even W -> half pixel)
     size = max(1, round(FIX_DIAM_FRAC * W))            # overall extent in px
+    yy, xx = np.ogrid[:W, :W]                          # both shapes share this centre, so
+    dy, dx = yy - cen, xx - cen                        # toggling dot<->cross never shifts it
     if shape == "cross":
-        c = W // 2
         t = max(1, round(size * FIX_CROSS_THICK_FRAC))  # line thickness
-        half = size // 2
-        tlo, thi = c - t // 2, c + (t + 1) // 2         # thickness band (centred)
-        slo, shi = c - half, c - half + size            # full span (length = size)
-        mask = np.zeros((W, W), bool)
-        mask[slo:shi, tlo:thi] = True                   # vertical bar
-        mask[tlo:thi, slo:shi] = True                   # horizontal bar
-        return mask
-    yy, xx = np.ogrid[:W, :W]                           # filled circle, diameter = size
+        span = lambda d: (d >= -size / 2.0) & (d < size / 2.0)   # half-open -> exactly `size`
+        thick = lambda d: (d >= -t / 2.0) & (d < t / 2.0)        #            and `t` px wide
+        return (thick(dx) & span(dy)) | (thick(dy) & span(dx))   # vertical | horizontal bar
     r = size / 2.0
-    return (yy - cen) ** 2 + (xx - cen) ** 2 <= r * r
+    return dy ** 2 + dx ** 2 <= r * r                  # filled circle, diameter = size
 
 
 def write_fixation_timing(schedule: list[dict], path: str) -> None:

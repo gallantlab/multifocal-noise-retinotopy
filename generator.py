@@ -29,6 +29,7 @@ Conventions
 
 from __future__ import annotations
 
+import csv
 import json
 import math
 import os
@@ -75,13 +76,58 @@ DEFAULTS = {
     "n_orientations": 2,
     "background": "gray",                                # gray | random | oriented | oriented_mseq
     "fade_frames": 5, "pad_sec": 2.0,
-    "fixation": "on",                                    # off | on (central 2x2 spot)
+    "fixation": "on",                                    # off | on (central red/green spot)
+    "fixation_shape": "dot",                             # dot | cross (central fixation shape)
     "seed": BASE_SEED,                                   # base RNG seed (same seed -> identical movie)
     "mode": "demo",                                      # demo | full
 }
 
-FIX_BLOCK_SEC = 0.5            # fixation spot re-colors every this many seconds
-FIX_SIZE = 2                   # fixation spot side length (pixels)
+FIX_BLOCK_SEC_MIN = 3.0       # fixation re-colors after a random interval drawn
+FIX_BLOCK_SEC_MAX = 8.0       # uniformly from [MIN, MAX] seconds (matches Daniel's 3-8 s)
+# Fixation size scales with the movie width so the mark keeps the same apparent size
+# at any resolution. Tuned a bit smaller than Daniel's presentation dot (which was
+# 0.1 deg ~= 9.6 px on a 1080-px screen); the dot is a filled circle of this diameter
+# and the cross spans the same extent. Bump FIX_DIAM_FRAC to enlarge both.
+FIX_DIAM_FRAC = 6.0 / 1080    # fixation overall size as a fraction of movie width
+FIX_CROSS_THICK_FRAC = 0.30   # cross line thickness as a fraction of that overall size
+FIX_RED = np.array([255, 0, 0], np.uint8)     # the two fixation colours: the spot
+FIX_GREEN = np.array([0, 255, 0], np.uint8)   # alternates between red and green
+
+
+def fixation_mask(W: int, shape: str) -> np.ndarray:
+    """Boolean ``(W, W)`` mask of the central fixation pixels for ``shape``.
+
+    Both shapes span ``FIX_DIAM_FRAC * W`` px (Daniel's ~0.1 deg dot). ``"dot"`` is a
+    filled circle of that diameter; ``"cross"`` is a plus sign of the same extent.
+    """
+    cen = (W - 1) / 2.0                                # true image centre (even W -> half pixel)
+    size = max(1, round(FIX_DIAM_FRAC * W))            # overall extent in px
+    yy, xx = np.ogrid[:W, :W]                          # both shapes share this centre, so
+    dy, dx = yy - cen, xx - cen                        # toggling dot<->cross never shifts it
+    if shape == "cross":
+        t = max(1, round(size * FIX_CROSS_THICK_FRAC))  # line thickness
+        span = lambda d: (d >= -size / 2.0) & (d < size / 2.0)   # half-open -> exactly `size`
+        thick = lambda d: (d >= -t / 2.0) & (d < t / 2.0)        #            and `t` px wide
+        return (thick(dx) & span(dy)) | (thick(dy) & span(dx))   # vertical | horizontal bar
+    r = size / 2.0
+    return dy ** 2 + dx ** 2 <= r * r                  # filled circle, diameter = size
+
+
+def write_fixation_timing(schedule: list[dict], path: str) -> None:
+    """Write the fixation colour schedule to a CSV (one row per held colour block).
+
+    Columns: ``start_frame, end_frame, duration_frames, start_sec, duration_sec, color``.
+    Removes a stale file when ``schedule`` is empty (fixation off).
+    """
+    if not schedule:
+        if os.path.exists(path):
+            os.remove(path)
+        return
+    cols = ["start_frame", "end_frame", "duration_frames", "start_sec", "duration_sec", "color"]
+    with open(path, "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=cols, extrasaction="ignore")
+        writer.writeheader()
+        writer.writerows(schedule)
 
 
 class Cancelled(Exception):
@@ -729,24 +775,43 @@ def generate_movie(params: dict,
     total = 2 * pad + n_states * frames_per_state
     saved = [0]
 
-    # central fixation spot: a FIX_SIZE x FIX_SIZE square recolored at random every
-    # FIX_BLOCK_SEC; the colour sequence is seeded (reproducible) and recorded.
+    # central fixation mark (a "dot" circle or a "cross") that alternates red/green
+    # so every block is a visible colour change (first colour random). Each colour
+    # is held for a random interval drawn uniformly from
+    # [FIX_BLOCK_SEC_MIN, FIX_BLOCK_SEC_MAX]; the schedule is seeded (reproducible)
+    # and recorded (meta + fixation_timing.csv).
     fixation = p["fixation"] == "on"
-    fix_block = max(1, round(FIX_BLOCK_SEC * fps))
-    fix_colors = None
+    fix_shape = "cross" if p.get("fixation_shape") == "cross" else "dot"
+    fix_mask = None
+    fix_frame_color = None                                  # per-frame (total, 3) RGB overlay
+    fix_schedule = []                                       # one entry per held colour block
     if fixation:
-        n_blocks = (total + fix_block - 1) // fix_block
-        fix_colors = np.random.default_rng(base_seed + 4242).integers(
-            0, 256, (n_blocks, 3), dtype=np.uint8)
+        rng = np.random.default_rng(base_seed + 4242)
+        lo = max(1, round(FIX_BLOCK_SEC_MIN * fps))
+        hi = max(lo, round(FIX_BLOCK_SEC_MAX * fps))
+        fix_frame_color = np.empty((total, 3), np.uint8)
+        f0 = 0
+        is_red = None                                      # first colour random; then alternate
+        while f0 < total:
+            dur = int(rng.integers(lo, hi + 1))            # random hold length (frames)
+            f1 = min(total, f0 + dur)
+            is_red = bool(rng.integers(0, 2)) if is_red is None else (not is_red)
+            block_color = FIX_RED if is_red else FIX_GREEN
+            fix_frame_color[f0:f1] = block_color
+            fix_schedule.append({
+                "start_frame": f0, "end_frame": f1, "duration_frames": f1 - f0,
+                "start_sec": round(f0 / fps, 4), "duration_sec": round((f1 - f0) / fps, 4),
+                "color": "red" if is_red else "green", "rgb": block_color.tolist(),
+            })
+            f0 = f1
+        fix_mask = fixation_mask(W, fix_shape)
 
     def emit(frame: np.ndarray) -> None:
         check_cancel()
         u8 = frame if frame.dtype == np.uint8 else np.clip(frame, 0, 255).astype(np.uint8)
         u8 = np.ascontiguousarray(u8)                      # own copy before overlay
         if fixation:
-            c = W // 2
-            u8[c - FIX_SIZE // 2:c + (FIX_SIZE + 1) // 2,
-               c - FIX_SIZE // 2:c + (FIX_SIZE + 1) // 2, :] = fix_colors[saved[0] // fix_block]
+            u8[fix_mask] = fix_frame_color[saved[0]]
         Image.fromarray(u8, "RGB").save(os.path.join(FRAME_DIR, f"frame_{saved[0]:05d}.png"))
         saved[0] += 1
         if progress_cb and saved[0] % 5 == 0:
@@ -816,6 +881,7 @@ def generate_movie(params: dict,
                 os.remove(stale)
     render_design_matrix(design, os.path.join(HERE, "design_matrix.png"))
     render_orientation_matrix(orient_index, design, K, os.path.join(HERE, "orientation_matrix.png"))
+    write_fixation_timing(fix_schedule, os.path.join(HERE, "fixation_timing.csv"))
 
     # --- metadata for the viewer ---
     meta = {
@@ -828,8 +894,9 @@ def generate_movie(params: dict,
         "color": color, "background": bg_mode, "bg_orient": bg_orient, "bg_angles": bg_angles,
         "seed": base_seed,
         "fixation": p["fixation"],
-        "fixation_block_frames": fix_block if fixation else 0,
-        "fixation_colors": fix_colors.tolist() if fixation else [],
+        "fixation_shape": fix_shape,
+        "fixation_block_sec_range": [FIX_BLOCK_SEC_MIN, FIX_BLOCK_SEC_MAX],
+        "fixation_schedule": fix_schedule,
         "sf_band": [sf_lo, sf_hi], "sf_shape": sf_shape,
         "tf_band": [tf_lo, tf_hi], "tf_shape": tf_shape,
         "n_orientations": K, "orient_angles": angles,

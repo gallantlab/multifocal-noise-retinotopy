@@ -15,6 +15,7 @@ frames/
 
 # Generated plots / matrices / metadata (root only; keeps docs/ images)
 /*.png
+/fixation_timing.csv
 movie_meta.js
 movie_meta.json
 msequence_design.js

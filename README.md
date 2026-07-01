@@ -101,8 +101,9 @@ Defaults below mirror `DEFAULTS` in `generator.py` (and the `index.html` form). 
 | background | gray \| random \| oriented \| oriented_mseq | gray | `random` = isotropic noise behind the wedges; `oriented` = single-orientation noise whose angle is, each state, as orthogonal as possible to that state's wedge orientations; `oriented_mseq` = single-orientation noise whose angle is set, each state, by a **third m-sequence** (interleaved `90/K°` from the foreground angles; `K=2` → 45°/135°). See the UI reference for both oriented modes. |
 | fade frames | frames | 5 | Per-state fade in/out. |
 | padding | sec | 2 | Full-screen isotropic noise before & after the movie. |
-| fixation spot | off \| on | on | A central fixation mark (`fixation shape` = `dot` filled circle or `cross`, ~0.1° / ~0.9% of width, scaling with resolution) that alternates **red/green** every **3–8 s** (random) as a dummy task; baked into every frame, schedule saved to `fixation_timing.csv` + metadata. |
-| fixation shape | dot \| cross | dot | Shape of the fixation mark: a filled circle (`dot`) or a plus sign (`cross`) of the same overall size. |
+| fixation spot | off \| on | on | A central fixation mark (~0.1° / ~0.9% of width, scaling with resolution) that changes every **3–8 s** (random) as a dummy task; baked into every frame, schedule saved to `fixation_timing.csv` + metadata. |
+| fixation task | color \| shape | color | What the mark changes: `color` = a fixed shape alternating **red/green**; `shape` = a single **black** mark swapping between the dot (circle) and the cross. |
+| fixation shape | dot \| cross | dot | A filled circle (`dot`) or a plus sign (`cross`) of the same overall size. For the `color` task this is the fixed shape; for the `shape` task it is the shape the mark starts on (then alternates). |
 | random seed | integer ≥ 0 | 1234 | Base RNG seed. The **same seed + same parameters → an identical movie**; change it to draw a different noise realization with the *same* statistics. Negative values are coerced to their absolute value; non-numeric falls back to 1234. Recorded in metadata. |
 | demo / full | – | demo | `demo` = first 5 states, `full` = all 63. |
 
@@ -215,10 +216,13 @@ Defaults below mirror `DEFAULTS` in `generator.py` (and the `index.html` form). 
   (padding included), drawn on top at full contrast as a dummy-task target.
   `fixation shape` selects a filled circle (`dot`) or a plus sign (`cross`); both
   span ~0.1° (≈0.9% of the movie width, scaling with resolution, matching the
-  presentation-code dot). The mark **alternates red/green** so every change is
-  visible, holding each color for a **random 3–8 s** interval. The seeded color
-  schedule (start/duration/color per block) is saved to `fixation_timing.csv` and
-  `fixation_schedule` in the metadata. Default on.
+  presentation-code dot). `fixation task` picks the change dimension: `color`
+  keeps the shape fixed and **alternates red/green**; `shape` keeps the mark
+  **black** and swaps between the dot and the cross (starting on `fixation shape`).
+  Either way every block is a visible change, held for a **random 3–8 s** interval.
+  The seeded schedule (start/duration/shape/color per block) is saved to
+  `fixation_timing.csv` and `fixation_schedule` in the metadata. Default on,
+  `color` task.
 
 - **demo / full** — `demo` renders only the first 5 states (quick iteration);
   `full` renders all 63. Default demo.
@@ -442,7 +446,7 @@ gain in `generator.py` (`GAIN`) if clipping matters for your stimulus.
 | File | Contents |
 |------|----------|
 | `frames/frame_NNNNN.png` | The movie, one PNG per frame (`width × width`, RGB). |
-| `movie_meta.json` | The **complete design + parameters**, enough to reconstruct the stimulus: `geometry` (`wedges`/`rings`) and `ring_spacing`, `design` (states × regions on/off), `orient_design` (orientation index per state × region), `orient_angles`, `wedge_mask`, `wedge_rotation`, `bg_orient` (background orientation for **every** state in oriented mode), `fixation_colors` (the per-0.5 s spot colors) + `fixation_block_frames`, timing, bands, and the echoed `params`. All design arrays cover all 63 states even in demo mode. |
+| `movie_meta.json` | The **complete design + parameters**, enough to reconstruct the stimulus: `geometry` (`wedges`/`rings`) and `ring_spacing`, `design` (states × regions on/off), `orient_design` (orientation index per state × region), `orient_angles`, `wedge_mask`, `wedge_rotation`, `bg_orient` (background orientation for **every** state in oriented mode), `fixation_task`/`fixation_shape` + `fixation_schedule` (start/duration/shape/color per block) + `fixation_block_sec_range`, timing, bands, and the echoed `params`. All design arrays cover all 63 states even in demo mode. |
 | `design_matrix.png` | On/off m-sequence (states × wedges). |
 | `orientation_matrix.png` | Orientation m-sequence (states × wedges; one color per orientation, faded where off). |
 | `temporal_spectrum.png`, `spatial_spectrum.png`, `orientation_spectrum.png` | Measured spectra of the generated noise vs. the ideal, for verification. The spectra are sampled from state 0, so they show the orientations present in that state. |

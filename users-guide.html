@@ -109,7 +109,9 @@
         <tr><td>background</td><td>gray&nbsp;|&nbsp;random&nbsp;|&nbsp;oriented&nbsp;|&nbsp;oriented_mseq</td><td>gray</td><td><code>random</code> = isotropic noise; <code>oriented</code> = single-orientation noise, per state most orthogonal to the on-regions; <code>oriented_mseq</code> = single-orientation noise set by a third m-sequence (distinct polynomial), angles interleaved (<code>90/K°</code>) with the foreground.</td></tr>
         <tr><td>fade between states</td><td>frames</td><td>5</td><td>Per-state contrast ramp in/out (to background). Clamped to <code>frames_per_state/2</code>.</td></tr>
         <tr><td>padding before/after</td><td>sec</td><td>2</td><td>Full-screen isotropic 1/f noise prepended and appended.</td></tr>
-        <tr><td>fixation spot</td><td>off&nbsp;|&nbsp;on</td><td>on</td><td>Central 2×2-px square, random colour every 0.5 s; colour sequence recorded.</td></tr>
+        <tr><td>fixation spot</td><td>off&nbsp;|&nbsp;on</td><td>on</td><td>Central mark (dot or cross), changing every 3–8&nbsp;s as a detection task; schedule recorded.</td></tr>
+        <tr><td>fixation task</td><td>color&nbsp;|&nbsp;shape</td><td>color</td><td><code>color</code> = fixed shape alternating red↔green; <code>shape</code> = black mark swapping dot↔cross.</td></tr>
+        <tr><td>fixation shape</td><td>dot&nbsp;|&nbsp;cross</td><td>dot</td><td>Filled circle or plus sign. Color task: the fixed shape. Shape task: the starting shape.</td></tr>
         <tr><td>random seed</td><td>int ≥ 0</td><td>1234</td><td>Base RNG seed. Same seed + params → identical movie; change it for a new realization with the same statistics. Negatives use <code>abs</code>, non-numeric falls back to 1234. Recorded in metadata.</td></tr>
         <tr><td>demo / full</td><td>—</td><td>demo</td><td><code>demo</code> = first 5 states; <code>full</code> = all 63.</td></tr>
       </tbody>
@@ -268,7 +270,8 @@ pixel = clip(128 + 38 * noise, 0, 255)  # BG=128, GAIN=38 gray-levels/std</code>
       <code>orient_angles</code>, <code>wedge_mask</code>, <code>wedge_rotation</code>,
       <code>bg_orient</code> (background angle for every state) +
       <code>bg_angles</code> (the m-seq background angle set),
-      <code>fixation_colors</code> + <code>fixation_block_frames</code>, the
+      <code>fixation_task</code>, <code>fixation_shape</code>, <code>fixation_schedule</code>
+      + <code>fixation_block_sec_range</code>, the
       <code>seed</code>, all timing and band settings, and the echoed <code>params</code>.
       Design arrays cover all 63 states even in demo mode.</p>
 

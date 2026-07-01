@@ -76,22 +76,25 @@ DEFAULTS = {
     "n_orientations": 2,
     "background": "gray",                                # gray | random | oriented | oriented_mseq
     "fade_frames": 5, "pad_sec": 2.0,
-    "fixation": "on",                                    # off | on (central red/green spot)
-    "fixation_shape": "dot",                             # dot | cross (central fixation shape)
+    "fixation": "on",                                    # off | on (central fixation mark)
+    "fixation_task": "color",                            # color | shape (change dimension the subject tracks)
+    "fixation_shape": "dot",                             # dot | cross (color task: the fixed shape;
+                                                         #             shape task: the shape it starts on)
     "seed": BASE_SEED,                                   # base RNG seed (same seed -> identical movie)
     "mode": "demo",                                      # demo | full
 }
 
-FIX_BLOCK_SEC_MIN = 3.0       # fixation re-colors after a random interval drawn
-FIX_BLOCK_SEC_MAX = 8.0       # uniformly from [MIN, MAX] seconds (matches Daniel's 3-8 s)
+FIX_BLOCK_SEC_MIN = 3.0       # fixation changes (re-colors, or swaps shape) after a random interval
+FIX_BLOCK_SEC_MAX = 8.0       # drawn uniformly from [MIN, MAX] seconds (matches Daniel's 3-8 s)
 # Fixation size scales with the movie width so the mark keeps the same apparent size
 # at any resolution. Tuned a bit smaller than Daniel's presentation dot (which was
 # 0.1 deg ~= 9.6 px on a 1080-px screen); the dot is a filled circle of this diameter
 # and the cross spans the same extent. Bump FIX_DIAM_FRAC to enlarge both.
 FIX_DIAM_FRAC = 6.0 / 1080    # fixation overall size as a fraction of movie width
 FIX_CROSS_THICK_FRAC = 0.30   # cross line thickness as a fraction of that overall size
-FIX_RED = np.array([255, 0, 0], np.uint8)     # the two fixation colours: the spot
-FIX_GREEN = np.array([0, 255, 0], np.uint8)   # alternates between red and green
+FIX_RED = np.array([255, 0, 0], np.uint8)     # colour task: the mark alternates between
+FIX_GREEN = np.array([0, 255, 0], np.uint8)   # these two colours (red <-> green)
+FIX_BLACK = np.array([0, 0, 0], np.uint8)     # shape task: a single black mark whose shape swaps
 
 
 def fixation_mask(W: int, shape: str) -> np.ndarray:
@@ -114,16 +117,17 @@ def fixation_mask(W: int, shape: str) -> np.ndarray:
 
 
 def write_fixation_timing(schedule: list[dict], path: str) -> None:
-    """Write the fixation colour schedule to a CSV (one row per held colour block).
+    """Write the fixation change schedule to a CSV (one row per held block).
 
-    Columns: ``start_frame, end_frame, duration_frames, start_sec, duration_sec, color``.
-    Removes a stale file when ``schedule`` is empty (fixation off).
+    Columns: ``start_frame, end_frame, duration_frames, start_sec, duration_sec, shape, color``.
+    The colour task varies ``color`` (shape fixed); the shape task varies ``shape``
+    (colour fixed at black). Removes a stale file when ``schedule`` is empty (fixation off).
     """
     if not schedule:
         if os.path.exists(path):
             os.remove(path)
         return
-    cols = ["start_frame", "end_frame", "duration_frames", "start_sec", "duration_sec", "color"]
+    cols = ["start_frame", "end_frame", "duration_frames", "start_sec", "duration_sec", "shape", "color"]
     with open(path, "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=cols, extrasaction="ignore")
         writer.writeheader()
@@ -775,43 +779,69 @@ def generate_movie(params: dict,
     total = 2 * pad + n_states * frames_per_state
     saved = [0]
 
-    # central fixation mark (a "dot" circle or a "cross") that alternates red/green
-    # so every block is a visible colour change (first colour random). Each colour
-    # is held for a random interval drawn uniformly from
-    # [FIX_BLOCK_SEC_MIN, FIX_BLOCK_SEC_MAX]; the schedule is seeded (reproducible)
-    # and recorded (meta + fixation_timing.csv).
+    # central fixation mark held for a random interval drawn uniformly from
+    # [FIX_BLOCK_SEC_MIN, FIX_BLOCK_SEC_MAX], changing at every block boundary so the
+    # subject has a steady detection task. Two task variants (both seeded/reproducible
+    # and recorded to meta + fixation_timing.csv):
+    #   "color" -- a fixed shape ("dot" or "cross") that alternates red <-> green
+    #              (first colour random, then strictly alternating).
+    #   "shape" -- a single black mark that swaps shape (dot circle <-> plus cross)
+    #              at every block, starting on `fixation_shape`.
     fixation = p["fixation"] == "on"
+    fix_task = "shape" if p.get("fixation_task") == "shape" else "color"
     fix_shape = "cross" if p.get("fixation_shape") == "cross" else "dot"
-    fix_mask = None
-    fix_frame_color = None                                  # per-frame (total, 3) RGB overlay
-    fix_schedule = []                                       # one entry per held colour block
+    fix_mask = None                                        # color task: single fixed-shape mask
+    fix_masks = None                                       # shape task: [mask_a, mask_b] to alternate
+    fix_frame_color = None                                 # color task: per-frame (total, 3) RGB overlay
+    fix_frame_shape = None                                 # shape task: per-frame index into fix_masks
+    fix_schedule = []                                      # one entry per held block
     if fixation:
         rng = np.random.default_rng(base_seed + 4242)
         lo = max(1, round(FIX_BLOCK_SEC_MIN * fps))
         hi = max(lo, round(FIX_BLOCK_SEC_MAX * fps))
-        fix_frame_color = np.empty((total, 3), np.uint8)
         f0 = 0
-        is_red = None                                      # first colour random; then alternate
-        while f0 < total:
-            dur = int(rng.integers(lo, hi + 1))            # random hold length (frames)
-            f1 = min(total, f0 + dur)
-            is_red = bool(rng.integers(0, 2)) if is_red is None else (not is_red)
-            block_color = FIX_RED if is_red else FIX_GREEN
-            fix_frame_color[f0:f1] = block_color
-            fix_schedule.append({
-                "start_frame": f0, "end_frame": f1, "duration_frames": f1 - f0,
-                "start_sec": round(f0 / fps, 4), "duration_sec": round((f1 - f0) / fps, 4),
-                "color": "red" if is_red else "green", "rgb": block_color.tolist(),
-            })
-            f0 = f1
-        fix_mask = fixation_mask(W, fix_shape)
+        if fix_task == "shape":
+            shapes = [fix_shape, "cross" if fix_shape == "dot" else "dot"]  # start on fix_shape, then swap
+            fix_masks = [fixation_mask(W, s) for s in shapes]
+            fix_frame_shape = np.empty(total, np.uint8)
+            idx = 0                                        # index into `shapes`; flips each block
+            while f0 < total:
+                dur = int(rng.integers(lo, hi + 1))        # random hold length (frames)
+                f1 = min(total, f0 + dur)
+                fix_frame_shape[f0:f1] = idx
+                fix_schedule.append({
+                    "start_frame": f0, "end_frame": f1, "duration_frames": f1 - f0,
+                    "start_sec": round(f0 / fps, 4), "duration_sec": round((f1 - f0) / fps, 4),
+                    "shape": shapes[idx], "color": "black", "rgb": FIX_BLACK.tolist(),
+                })
+                f0 = f1
+                idx ^= 1
+        else:
+            fix_mask = fixation_mask(W, fix_shape)
+            fix_frame_color = np.empty((total, 3), np.uint8)
+            is_red = None                                  # first colour random; then alternate
+            while f0 < total:
+                dur = int(rng.integers(lo, hi + 1))        # random hold length (frames)
+                f1 = min(total, f0 + dur)
+                is_red = bool(rng.integers(0, 2)) if is_red is None else (not is_red)
+                block_color = FIX_RED if is_red else FIX_GREEN
+                fix_frame_color[f0:f1] = block_color
+                fix_schedule.append({
+                    "start_frame": f0, "end_frame": f1, "duration_frames": f1 - f0,
+                    "start_sec": round(f0 / fps, 4), "duration_sec": round((f1 - f0) / fps, 4),
+                    "shape": fix_shape, "color": "red" if is_red else "green", "rgb": block_color.tolist(),
+                })
+                f0 = f1
 
     def emit(frame: np.ndarray) -> None:
         check_cancel()
         u8 = frame if frame.dtype == np.uint8 else np.clip(frame, 0, 255).astype(np.uint8)
         u8 = np.ascontiguousarray(u8)                      # own copy before overlay
         if fixation:
-            u8[fix_mask] = fix_frame_color[saved[0]]
+            if fix_task == "shape":
+                u8[fix_masks[fix_frame_shape[saved[0]]]] = FIX_BLACK
+            else:
+                u8[fix_mask] = fix_frame_color[saved[0]]
         Image.fromarray(u8, "RGB").save(os.path.join(FRAME_DIR, f"frame_{saved[0]:05d}.png"))
         saved[0] += 1
         if progress_cb and saved[0] % 5 == 0:
@@ -894,6 +924,7 @@ def generate_movie(params: dict,
         "color": color, "background": bg_mode, "bg_orient": bg_orient, "bg_angles": bg_angles,
         "seed": base_seed,
         "fixation": p["fixation"],
+        "fixation_task": fix_task,
         "fixation_shape": fix_shape,
         "fixation_block_sec_range": [FIX_BLOCK_SEC_MIN, FIX_BLOCK_SEC_MAX],
         "fixation_schedule": fix_schedule,

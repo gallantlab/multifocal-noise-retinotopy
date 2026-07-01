@@ -173,6 +173,7 @@ const FIELDS = [
   {k:"fade_frames",  label:"fade between states (frames)", type:"num"},
   {k:"pad_sec",      label:"padding before/after (sec)",   type:"num", step:"0.5"},
   {k:"fixation",     label:"fixation spot",                type:"sel", opts:["off","on"]},
+  {k:"fixation_task", label:"fixation task",               type:"sel", opts:["color","shape"]},
   {k:"fixation_shape",label:"fixation shape",              type:"sel", opts:["dot","cross"]},
   {k:"seed",         label:"random seed",                  type:"num", step:"1", min:"0"},
   {k:"mode",         label:"demo / full",                  type:"sel", opts:["demo","full"]},
@@ -181,7 +182,7 @@ const DEFAULTS = {geometry:"wedges",width:512,n_wedges:8,wedge_rotation:22.5,rin
   wedge_sec:4.1,fps:30,color:"color",
   tf_shape:"1/f",tf_lo:0.5,tf_hi:15,sf_shape:"1/f",sf_lo:2,sf_hi:128,
   n_orientations:2,background:"gray",output_dir:"output",encode_mp4:"off",mp4_quality:"lossless",
-  fade_frames:5,pad_sec:2,fixation:"on",fixation_shape:"dot",seed:1234,mode:"demo"};
+  fade_frames:5,pad_sec:2,fixation:"on",fixation_task:"color",fixation_shape:"dot",seed:1234,mode:"demo"};
 
 // ---- build the form ----
 const form = document.getElementById('form');

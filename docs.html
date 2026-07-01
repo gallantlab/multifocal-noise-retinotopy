@@ -194,10 +194,13 @@
     </ul>
 
     <h3 id="c-fixation">The fixation spot</h3>
-    <p>A tiny <strong>2×2-pixel square at the exact centre</strong> that the viewer fixates on
-      throughout. It <strong>changes to a random colour twice a second</strong>, which gives
-      the viewer a little task (helping them hold their gaze steady) and marks the centre.
-      Its colour sequence is recorded so you know exactly what was shown.</p>
+    <p>A tiny <strong>mark at the exact centre</strong> (a <strong>dot</strong> or a
+      <strong>cross</strong>) that the viewer fixates on throughout. It <strong>changes at random
+      intervals of 3–8&nbsp;seconds</strong>, which gives the viewer a little detection task
+      (helping them hold their gaze steady) and marks the centre. There are two task variants:
+      <strong>colour</strong> — a fixed shape that alternates red&nbsp;↔&nbsp;green; and
+      <strong>shape</strong> — a single black mark that swaps between a circle and a triangle. The
+      full change schedule is recorded so you know exactly what was shown.</p>
 
     <h2 id="controls">Every control, explained</h2>
     <p>Defaults are in <code>()</code>. Controls that only matter for one geometry are tagged
@@ -273,7 +276,17 @@
         lead-out for a scanner run.</dd>
 
       <dt>fixation spot <span class="muted">(on)</span></dt>
-      <dd>Turns the central colour-changing dot on or off.</dd>
+      <dd>Turns the central fixation mark on or off.</dd>
+
+      <dt>fixation task <span class="muted">(color)</span></dt>
+      <dd>What the mark changes: <strong>color</strong> keeps one shape and alternates
+        red&nbsp;↔&nbsp;green; <strong>shape</strong> keeps it black and swaps between a circle
+        and a triangle. Either way it changes every 3–8&nbsp;s as a detection task.</dd>
+
+      <dt>fixation shape <span class="muted">(dot)</span></dt>
+      <dd><strong>dot</strong> (filled circle) or <strong>cross</strong> (plus sign). This sets
+        the fixed shape for the <em>color</em> task; the <em>shape</em> task always swaps between
+        a circle and a triangle.</dd>
 
       <dt>random seed <span class="muted">(1234)</span></dt>
       <dd>The starting number for all the randomness. Keep it the same and you get the

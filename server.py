@@ -79,7 +79,7 @@ def save_outputs(params: dict, meta: dict) -> None:
     out_dir = os.path.join(generator.HERE, _safe_dirname(params.get("output_dir", DEFAULT_OUTPUT_DIR)))
     os.makedirs(out_dir, exist_ok=True)
 
-    # save the design + fixation colour timing alongside the movie. When a file is
+    # save the design + fixation change timing alongside the movie. When a file is
     # absent at the source (e.g. fixation off -> no timing csv), drop any stale copy
     # left in the output folder by a previous run.
     for fname in ("movie_meta.json", "fixation_timing.csv"):

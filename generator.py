@@ -108,6 +108,12 @@ def fixation_mask(W: int, shape: str) -> np.ndarray:
     """
     cen = (W - 1) / 2.0                                # true image centre (even W -> half pixel)
     size = max(1, round(FIX_DIAM_FRAC * W))            # overall extent in px
+    # Match `size` parity to `W` so the mark stays centred on the true image centre: an even W
+    # has a half-pixel centre and needs an even extent (and vice versa). Otherwise the half-open
+    # span is lop-sided and, at the smallest sizes, the circle and triangle can discretise to the
+    # same pixels -- an invisible shape swap (e.g. the default W=512, size=3).
+    if size % 2 != W % 2:
+        size += 1
     yy, xx = np.ogrid[:W, :W]                          # all shapes share this centre, so
     dy, dx = yy - cen, xx - cen                        # toggling between them never shifts it
     span = lambda d: (d >= -size / 2.0) & (d < size / 2.0)   # half-open -> exactly `size` px

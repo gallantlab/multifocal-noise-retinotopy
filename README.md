@@ -102,8 +102,8 @@ Defaults below mirror `DEFAULTS` in `generator.py` (and the `index.html` form). 
 | fade frames | frames | 5 | Per-state fade in/out. |
 | padding | sec | 2 | Full-screen isotropic noise before & after the movie. |
 | fixation spot | off \| on | on | A central fixation mark (~0.1° / ~0.9% of width, scaling with resolution) that changes every **3–8 s** (random) as a dummy task; baked into every frame, schedule saved to `fixation_timing.csv` + metadata. |
-| fixation task | color \| shape | color | What the mark changes: `color` = a fixed shape alternating **red/green**; `shape` = a single **black** mark swapping between the dot (circle) and the cross. |
-| fixation shape | dot \| cross | dot | A filled circle (`dot`) or a plus sign (`cross`) of the same overall size. For the `color` task this is the fixed shape; for the `shape` task it is the shape the mark starts on (then alternates). |
+| fixation task | color \| shape | color | What the mark changes: `color` = a fixed shape alternating **red/green**; `shape` = a single **black** mark swapping between a **circle** and a **square**. |
+| fixation shape | dot \| cross | dot | A filled circle (`dot`) or a plus sign (`cross`) of the same overall size — the fixed shape for the `color` task. (The `shape` task always swaps circle↔square.) |
 | random seed | integer ≥ 0 | 1234 | Base RNG seed. The **same seed + same parameters → an identical movie**; change it to draw a different noise realization with the *same* statistics. Negative values are coerced to their absolute value; non-numeric falls back to 1234. Recorded in metadata. |
 | demo / full | – | demo | `demo` = first 5 states, `full` = all 63. |
 
@@ -217,9 +217,9 @@ Defaults below mirror `DEFAULTS` in `generator.py` (and the `index.html` form). 
   `fixation shape` selects a filled circle (`dot`) or a plus sign (`cross`); both
   span ~0.1° (≈0.9% of the movie width, scaling with resolution, matching the
   presentation-code dot). `fixation task` picks the change dimension: `color`
-  keeps the shape fixed and **alternates red/green**; `shape` keeps the mark
-  **black** and swaps between the dot and the cross (starting on `fixation shape`).
-  Either way every block is a visible change, held for a **random 3–8 s** interval.
+  keeps the shape fixed (dot or cross) and **alternates red/green**; `shape` keeps
+  the mark **black** and swaps between a **circle and a square** (starting on the
+  circle). Either way every block is a visible change, held for a **random 3–8 s** interval.
   The seeded schedule (start/duration/shape/color per block) is saved to
   `fixation_timing.csv` and `fixation_schedule` in the metadata. Default on,
   `color` task.

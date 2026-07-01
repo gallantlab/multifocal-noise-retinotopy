@@ -79,8 +79,8 @@ DEFAULTS = {
     "fade_frames": 5, "pad_sec": 2.0,
     "fixation": "on",                                    # off | on (central fixation mark)
     "fixation_task": "color",                            # color | shape (change dimension the subject tracks)
-    "fixation_shape": "dot",                             # dot | cross (color task: the fixed shape;
-                                                         #             shape task: the shape it starts on)
+    "fixation_shape": "dot",                             # dot | cross (color task's fixed shape; the
+                                                         #             shape task always swaps circle<->square)
     "seed": BASE_SEED,                                   # base RNG seed (same seed -> identical movie)
     "mode": "demo",                                      # demo | full
 }
@@ -101,18 +101,22 @@ FIX_BLACK = np.array([0, 0, 0], np.uint8)     # shape task: a single black mark 
 def fixation_mask(W: int, shape: str) -> np.ndarray:
     """Boolean ``(W, W)`` mask of the central fixation pixels for ``shape``.
 
-    Both shapes span ``FIX_DIAM_FRAC * W`` px (Daniel's ~0.1 deg dot). ``"dot"`` is a
-    filled circle of that diameter; ``"cross"`` is a plus sign of the same extent.
+    Every shape shares the same ``FIX_DIAM_FRAC * W`` px bounding box (Daniel's
+    ~0.1 deg dot) and centre, so toggling between them never shifts the mark:
+    ``"dot"`` is a filled circle of that diameter, ``"square"`` a filled square of
+    that side (the circle inscribed in it), and ``"cross"`` a plus sign.
     """
     cen = (W - 1) / 2.0                                # true image centre (even W -> half pixel)
     size = max(1, round(FIX_DIAM_FRAC * W))            # overall extent in px
-    yy, xx = np.ogrid[:W, :W]                          # both shapes share this centre, so
-    dy, dx = yy - cen, xx - cen                        # toggling dot<->cross never shifts it
+    yy, xx = np.ogrid[:W, :W]                          # all shapes share this centre, so
+    dy, dx = yy - cen, xx - cen                        # toggling between them never shifts it
+    span = lambda d: (d >= -size / 2.0) & (d < size / 2.0)   # half-open -> exactly `size` px
     if shape == "cross":
         t = max(1, round(size * FIX_CROSS_THICK_FRAC))  # line thickness
-        span = lambda d: (d >= -size / 2.0) & (d < size / 2.0)   # half-open -> exactly `size`
-        thick = lambda d: (d >= -t / 2.0) & (d < t / 2.0)        #            and `t` px wide
+        thick = lambda d: (d >= -t / 2.0) & (d < t / 2.0)        # `t` px wide
         return (thick(dx) & span(dy)) | (thick(dy) & span(dx))   # vertical | horizontal bar
+    if shape == "square":
+        return span(dx) & span(dy)                    # filled square, side = size
     r = size / 2.0
     return dy ** 2 + dx ** 2 <= r * r                  # filled circle, diameter = size
 
@@ -811,10 +815,10 @@ def generate_movie(params: dict,
     # [FIX_BLOCK_SEC_MIN, FIX_BLOCK_SEC_MAX], changing at every block boundary so the
     # subject has a steady detection task. Two task variants (both seeded/reproducible
     # and recorded to meta + fixation_timing.csv):
-    #   "color" -- a fixed shape ("dot" or "cross") that alternates red <-> green
-    #              (first colour random, then strictly alternating).
-    #   "shape" -- a single black mark that swaps shape (dot circle <-> plus cross)
-    #              at every block, starting on `fixation_shape`.
+    #   "color" -- a fixed shape ("dot" or "cross", set by `fixation_shape`) that
+    #              alternates red <-> green (first colour random, then alternating).
+    #   "shape" -- a single black mark that swaps between a circle and a square at
+    #              every block (starting on the circle).
     fixation = p["fixation"] == "on"
     fix_task = "shape" if p.get("fixation_task") == "shape" else "color"
     fix_shape = "cross" if p.get("fixation_shape") == "cross" else "dot"
@@ -829,7 +833,7 @@ def generate_movie(params: dict,
         hi = max(lo, round(FIX_BLOCK_SEC_MAX * fps))
         f0 = 0
         if fix_task == "shape":
-            shapes = [fix_shape, "cross" if fix_shape == "dot" else "dot"]  # start on fix_shape, then swap
+            shapes = ["dot", "square"]                     # circle <-> square; start on the circle
             fix_masks = [fixation_mask(W, s) for s in shapes]
             fix_frame_shape = np.empty(total, np.uint8)
             idx = 0                                        # index into `shapes`; flips each block

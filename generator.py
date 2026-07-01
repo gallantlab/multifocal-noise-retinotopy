@@ -119,6 +119,8 @@ def fixation_mask(W: int, shape: str) -> np.ndarray:
     span = lambda d: (d >= -size / 2.0) & (d < size / 2.0)   # half-open -> exactly `size` px
     if shape == "cross":
         t = max(1, round(size * FIX_CROSS_THICK_FRAC))  # line thickness
+        if t % 2 != W % 2:                              # centre the bars too (parity match, like `size`)
+            t += 1
         thick = lambda d: (d >= -t / 2.0) & (d < t / 2.0)        # `t` px wide
         return (thick(dx) & span(dy)) | (thick(dy) & span(dx))   # vertical | horizontal bar
     if shape == "triangle":

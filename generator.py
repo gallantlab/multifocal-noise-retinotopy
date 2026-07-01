@@ -34,6 +34,7 @@ import json
 import math
 import os
 from collections.abc import Callable
+from functools import lru_cache
 
 import matplotlib
 matplotlib.use("Agg")
@@ -169,6 +170,18 @@ def m_sequence(order: int, taps: list[int], seed: int = 1) -> list[int]:
     return seq
 
 
+def decode_kary(seq: list[int], start: int, n_bits: int, k: int) -> int:
+    """Decode ``n_bits`` consecutive bits of ``seq`` from ``start`` (wrapping) as ``int mod k``.
+
+    The pragmatic K-ary decoder shared by the foreground orientation and the
+    m-sequence background: read ``n_bits`` bits little-endian and reduce mod ``k``
+    (exact only for ``k`` a power of two; see README).
+    """
+    L = len(seq)
+    bits = sum(seq[(start + j) % L] << j for j in range(n_bits))
+    return bits % k
+
+
 def build_design(n_regions: int, n_orientations: int
                  ) -> tuple[np.ndarray, np.ndarray, list[float], int]:
     """Build the on/off and orientation designs from two m-sequences.
@@ -199,16 +212,11 @@ def build_design(n_regions: int, n_orientations: int
     shifts = [round(k * L / n_regions) for k in range(n_regions)]
     n_bits = max(1, math.ceil(math.log2(n_orientations))) if n_orientations > 1 else 1
 
-    def orient_at(state: int, region: int) -> int:
-        bits = 0
-        for j in range(n_bits):
-            bits |= oseq[(state + shifts[region] + j) % L] << j
-        return bits % n_orientations
-
     design = np.array([[onoff[(s + shifts[k]) % L] for k in range(n_regions)]
                        for s in range(L)], dtype=int)
-    orient_index = np.array([[orient_at(s, k) for k in range(n_regions)]
-                             for s in range(L)], dtype=int)
+    orient_index = np.array(
+        [[decode_kary(oseq, s + shifts[k], n_bits, n_orientations) for k in range(n_regions)]
+         for s in range(L)], dtype=int)
     angles = [i * 180.0 / n_orientations for i in range(n_orientations)]
     return design, orient_index, angles, L
 
@@ -244,8 +252,7 @@ def background_design(n_orientations: int) -> tuple[np.ndarray, list[float]]:
     L = len(bseq)
     n_bits = max(1, math.ceil(math.log2(n_orientations))) if n_orientations > 1 else 1
     bg_index = np.array(
-        [sum(bseq[(s + j) % L] << j for j in range(n_bits)) % n_orientations
-         for s in range(L)], dtype=int)
+        [decode_kary(bseq, s, n_bits, n_orientations) for s in range(L)], dtype=int)
     offset = 90.0 / n_orientations
     bg_angles = [(i * 180.0 / n_orientations + offset) % 180.0 for i in range(n_orientations)]
     return bg_index, bg_angles
@@ -277,6 +284,19 @@ def orthogonal_orientation(present_deg: list[float]) -> float:
 
 
 # ============================================================ Fourier filters
+@lru_cache(maxsize=None)
+def _fourier_grids(width: int) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Cached ``(FX, FY, fr)`` spatial-frequency grids (cyc/width) for a ``width``-px field.
+
+    The grids depend only on ``width`` and are read-only for every caller, so they are
+    memoized to avoid rebuilding ``meshgrid``/``hypot`` on each :func:`spatial_filter`
+    call (notably the per-state oriented-background filter). Never mutate the result.
+    """
+    f = np.fft.fftfreq(width, d=1.0) * width          # cyc/width
+    FX, FY = np.meshgrid(f, f)
+    return FX, FY, np.hypot(FX, FY)
+
+
 def orientation_mask(FX: np.ndarray, FY: np.ndarray, theta_deg: float,
                      halfwidth: float) -> np.ndarray:
     """Boolean mask selecting one image orientation in the 2-D Fourier plane.
@@ -313,9 +333,7 @@ def spatial_filter(width: int, sf_lo: float, sf_hi: float, shape: str,
     amplitude, optionally restricted to a single orientation ``theta`` (deg).
     ``theta=None`` gives an isotropic filter (all orientations).
     """
-    f = np.fft.fftfreq(width, d=1.0) * width          # cyc/width
-    FX, FY = np.meshgrid(f, f)
-    fr = np.hypot(FX, FY)
+    FX, FY, fr = _fourier_grids(width)
     band = (fr >= sf_lo) & (fr <= sf_hi)
     with np.errstate(divide="ignore"):
         amp = (1.0 / fr) if shape == "1/f" else np.ones_like(fr)
@@ -554,6 +572,34 @@ def _dark(ax) -> None:
     ax.grid(True, which="both", color="#ffffff12", lw=0.6)
 
 
+def _legend(ax) -> None:
+    """Themed legend matching the dark viewer palette."""
+    ax.legend(facecolor=_STYLE["panel"], edgecolor=_STYLE["muted"], labelcolor=_STYLE["fg"], fontsize=8)
+
+
+def _finish(fig, out: str) -> None:
+    """Tight-layout, save, and close a figure (shared spectra-plot teardown)."""
+    fig.tight_layout()
+    fig.savefig(out)
+    plt.close(fig)
+
+
+def _plot_ideal(ax, freqs: np.ndarray, power: np.ndarray, band: np.ndarray, shape: str) -> None:
+    """Overlay the ideal ``1/f²`` or ``flat`` reference on a log-log spectrum axis.
+
+    The constant is fit as the in-band median of the whitened power, matching the
+    measured curve's level. No-op when the requested band is empty.
+    """
+    if not band.any():                                # skip the ideal fit if the band is empty
+        return
+    if shape == "1/f":
+        K = np.median(power[band] * freqs[band] ** 2)
+        ax.loglog(freqs[band], K / freqs[band] ** 2, "--", color=_STYLE["ideal"], lw=1.4, label="ideal 1/f²")
+    else:
+        K = np.median(power[band])
+        ax.loglog(freqs[band], np.full(band.sum(), K), "--", color=_STYLE["ideal"], lw=1.4, label="flat")
+
+
 def _power2d(noise: np.ndarray) -> np.ndarray:
     """Time-averaged 2-D power spectrum of a ``(width, width, n_frames)`` field."""
     width, _, n_frames = noise.shape
@@ -574,21 +620,13 @@ def plot_temporal(noise: np.ndarray, fps: int, tf_lo: float, tf_hi: float,
     fig.patch.set_facecolor(_STYLE["panel"])
     ax.axvspan(tf_lo, tf_hi, color=_STYLE["ideal"], alpha=0.10)
     ax.loglog(ft[1:], np.maximum(power[1:], 1e-30), color=_STYLE["data"], lw=1.6, label="measured")
-    if band.any():                                    # skip the ideal fit if the band is empty
-        if shape == "1/f":
-            K = np.median(power[band] * ft[band] ** 2)
-            ax.loglog(ft[band], K / ft[band] ** 2, "--", color=_STYLE["ideal"], lw=1.4, label="ideal 1/f²")
-        else:
-            K = np.median(power[band])
-            ax.loglog(ft[band], np.full(band.sum(), K), "--", color=_STYLE["ideal"], lw=1.4, label="flat")
+    _plot_ideal(ax, ft, power, band, shape)
     ax.set_xlabel("temporal frequency (cyc/s)")
     ax.set_ylabel("power")
     ax.set_title("Temporal spectrum")
     _dark(ax)
-    ax.legend(facecolor=_STYLE["panel"], edgecolor=_STYLE["muted"], labelcolor=_STYLE["fg"], fontsize=8)
-    fig.tight_layout()
-    fig.savefig(out)
-    plt.close(fig)
+    _legend(ax)
+    _finish(fig, out)
 
 
 def plot_spatial(noise: np.ndarray, width: int, sf_lo: float, sf_hi: float,
@@ -607,18 +645,12 @@ def plot_spatial(noise: np.ndarray, width: int, sf_lo: float, sf_hi: float,
     ax1.axvspan(sf_lo, sf_hi, color=_STYLE["ideal"], alpha=0.10)
     ax1.loglog(frs[1:width // 2], np.maximum(radial[1:width // 2], 1e-30),
                color=_STYLE["data"], lw=1.6, label="measured")
-    if band.any():                                    # skip the ideal fit if the band is empty
-        if shape == "1/f":
-            K = np.median(radial[band] * frs[band] ** 2)
-            ax1.loglog(frs[band], K / frs[band] ** 2, "--", color=_STYLE["ideal"], lw=1.4, label="ideal 1/f²")
-        else:
-            K = np.median(radial[band])
-            ax1.loglog(frs[band], np.full(band.sum(), K), "--", color=_STYLE["ideal"], lw=1.4, label="flat")
+    _plot_ideal(ax1, frs, radial, band, shape)
     ax1.set_xlabel("spatial frequency (cyc/width)")
     ax1.set_ylabel("power")
     ax1.set_title("Spatial spectrum (radial)")
     _dark(ax1)
-    ax1.legend(facecolor=_STYLE["panel"], edgecolor=_STYLE["muted"], labelcolor=_STYLE["fg"], fontsize=8)
+    _legend(ax1)
 
     lim = min(width // 2, int(sf_hi * 1.2) + 8)
     ax2.imshow(np.log10(np.fft.fftshift(power) + 1e-9),
@@ -629,9 +661,7 @@ def plot_spatial(noise: np.ndarray, width: int, sf_lo: float, sf_hi: float,
     ax2.set_ylabel("fy (cyc/width)")
     ax2.set_title("2D power (log)")
     _dark(ax2)
-    fig.tight_layout()
-    fig.savefig(out)
-    plt.close(fig)
+    _finish(fig, out)
 
 
 def plot_orientation(noise: np.ndarray, width: int, sf_lo: float, sf_hi: float,
@@ -662,9 +692,7 @@ def plot_orientation(noise: np.ndarray, width: int, sf_lo: float, sf_hi: float,
     ax.set_ylabel("normalized power")
     ax.set_title(f"Orientation spectrum ({len(angles)})")
     _dark(ax)
-    fig.tight_layout()
-    fig.savefig(out)
-    plt.close(fig)
+    _finish(fig, out)
 
 
 # ============================================================ top-level
@@ -777,7 +805,7 @@ def generate_movie(params: dict,
         if fn.endswith(".png"):
             os.remove(os.path.join(FRAME_DIR, fn))
     total = 2 * pad + n_states * frames_per_state
-    saved = [0]
+    saved = 0                                             # frames written so far (mutated by emit)
 
     # central fixation mark held for a random interval drawn uniformly from
     # [FIX_BLOCK_SEC_MIN, FIX_BLOCK_SEC_MAX], changing at every block boundary so the
@@ -834,18 +862,19 @@ def generate_movie(params: dict,
                 f0 = f1
 
     def emit(frame: np.ndarray) -> None:
+        nonlocal saved
         check_cancel()
         u8 = frame if frame.dtype == np.uint8 else np.clip(frame, 0, 255).astype(np.uint8)
         u8 = np.ascontiguousarray(u8)                      # own copy before overlay
         if fixation:
             if fix_task == "shape":
-                u8[fix_masks[fix_frame_shape[saved[0]]]] = FIX_BLACK
+                u8[fix_masks[fix_frame_shape[saved]]] = FIX_BLACK
             else:
-                u8[fix_mask] = fix_frame_color[saved[0]]
-        Image.fromarray(u8, "RGB").save(os.path.join(FRAME_DIR, f"frame_{saved[0]:05d}.png"))
-        saved[0] += 1
-        if progress_cb and saved[0] % 5 == 0:
-            progress_cb(saved[0], total)
+                u8[fix_mask] = fix_frame_color[saved]
+        Image.fromarray(u8, "RGB").save(os.path.join(FRAME_DIR, f"frame_{saved:05d}.png"))
+        saved += 1
+        if progress_cb and saved % 5 == 0:
+            progress_cb(saved, total)
 
     def emit_padding(seed: int) -> None:
         if pad <= 0:
@@ -856,7 +885,7 @@ def generate_movie(params: dict,
 
     # --- render: padding, states, padding ---
     emit_padding(base_seed + 7000)
-    movie_start = saved[0]
+    movie_start = saved
 
     # one luminance carrier per orientation, sampled from the first rendered state that
     # has any on-regions (a subset mask can leave the early states blank).
@@ -890,10 +919,12 @@ def generate_movie(params: dict,
                     else np.full((W, W, 3), BG, float))
             frame = base.copy()
             for k in on:                          # blend each on-region toward the background by env
-                carrier = carriers[k][:, :, t, :].astype(float)
-                frame[masks[k]] = (base + env[t] * (carrier - base))[masks[k]]
+                m = masks[k]                      # index first: blend only the region's pixels
+                base_m = base[m]
+                carrier_m = carriers[k][:, :, t, :][m].astype(float)
+                frame[m] = base_m + env[t] * (carrier_m - base_m)
             emit(frame)
-    movie_end = saved[0]
+    movie_end = saved
     emit_padding(base_seed + 8000)
 
     # --- spectra (sampled from the first non-empty state's carriers) ---
@@ -920,7 +951,7 @@ def generate_movie(params: dict,
         "fps": fps, "wedge_sec": float(p["wedge_sec"]),
         "frames_per_state": frames_per_state, "generated_states": n_states, "total_states": L,
         "pad_frames": pad, "movie_start": movie_start, "movie_end": movie_end,
-        "total_frames": saved[0], "fade_frames": min(fade, frames_per_state // 2),
+        "total_frames": saved, "fade_frames": min(fade, frames_per_state // 2),
         "color": color, "background": bg_mode, "bg_orient": bg_orient, "bg_angles": bg_angles,
         "seed": base_seed,
         "fixation": p["fixation"],

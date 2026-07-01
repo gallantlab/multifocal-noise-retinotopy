@@ -80,7 +80,7 @@ DEFAULTS = {
     "fixation": "on",                                    # off | on (central fixation mark)
     "fixation_task": "color",                            # color | shape (change dimension the subject tracks)
     "fixation_shape": "dot",                             # dot | cross (color task's fixed shape; the
-                                                         #             shape task always swaps circle<->square)
+                                                         #             shape task always swaps circle<->triangle)
     "seed": BASE_SEED,                                   # base RNG seed (same seed -> identical movie)
     "mode": "demo",                                      # demo | full
 }
@@ -103,8 +103,8 @@ def fixation_mask(W: int, shape: str) -> np.ndarray:
 
     Every shape shares the same ``FIX_DIAM_FRAC * W`` px bounding box (Daniel's
     ~0.1 deg dot) and centre, so toggling between them never shifts the mark:
-    ``"dot"`` is a filled circle of that diameter, ``"square"`` a filled square of
-    that side (the circle inscribed in it), and ``"cross"`` a plus sign.
+    ``"dot"`` is a filled circle of that diameter, ``"triangle"`` an upward filled
+    triangle in that box (apex up, base at the bottom), and ``"cross"`` a plus sign.
     """
     cen = (W - 1) / 2.0                                # true image centre (even W -> half pixel)
     size = max(1, round(FIX_DIAM_FRAC * W))            # overall extent in px
@@ -115,8 +115,9 @@ def fixation_mask(W: int, shape: str) -> np.ndarray:
         t = max(1, round(size * FIX_CROSS_THICK_FRAC))  # line thickness
         thick = lambda d: (d >= -t / 2.0) & (d < t / 2.0)        # `t` px wide
         return (thick(dx) & span(dy)) | (thick(dy) & span(dx))   # vertical | horizontal bar
-    if shape == "square":
-        return span(dx) & span(dy)                    # filled square, side = size
+    if shape == "triangle":
+        v = (dy + size / 2.0) / size                  # 0 at apex row (top) -> 1 at base row (bottom)
+        return span(dy) & (np.abs(dx) <= v * (size / 2.0))       # half-width grows top->bottom
     r = size / 2.0
     return dy ** 2 + dx ** 2 <= r * r                  # filled circle, diameter = size
 
@@ -817,7 +818,7 @@ def generate_movie(params: dict,
     # and recorded to meta + fixation_timing.csv):
     #   "color" -- a fixed shape ("dot" or "cross", set by `fixation_shape`) that
     #              alternates red <-> green (first colour random, then alternating).
-    #   "shape" -- a single black mark that swaps between a circle and a square at
+    #   "shape" -- a single black mark that swaps between a circle and a triangle at
     #              every block (starting on the circle).
     fixation = p["fixation"] == "on"
     fix_task = "shape" if p.get("fixation_task") == "shape" else "color"
@@ -833,7 +834,7 @@ def generate_movie(params: dict,
         hi = max(lo, round(FIX_BLOCK_SEC_MAX * fps))
         f0 = 0
         if fix_task == "shape":
-            shapes = ["dot", "square"]                     # circle <-> square; start on the circle
+            shapes = ["dot", "triangle"]                   # circle <-> triangle; start on the circle
             fix_masks = [fixation_mask(W, s) for s in shapes]
             fix_frame_shape = np.empty(total, np.uint8)
             idx = 0                                        # index into `shapes`; flips each block
